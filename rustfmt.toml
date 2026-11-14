@@ -1,0 +1,5 @@
+# Se prefieren las expresiones en una sola línea mientras entren en el ancho:
+# partir una cadena corta de métodos en cinco líneas la hace más difícil de
+# leer, no más fácil.
+max_width = 100
+use_small_heuristics = "Max"
