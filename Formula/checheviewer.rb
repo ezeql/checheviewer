@@ -2,6 +2,7 @@ class Checheviewer < Formula
   desc "Fast, keyboard-driven image viewer for macOS, inspired by IrfanView"
   homepage "https://github.com/ezeql/checheviewer"
   url "https://github.com/ezeql/checheviewer.git", tag: "v0.1.0"
+  license "MIT"
   head "https://github.com/ezeql/checheviewer.git", branch: "main"
 
   depends_on "rust" => :build

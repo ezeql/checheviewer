@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Fast, keyboard-driven image viewer for macOS, inspired by IrfanView"
 repository = "https://github.com/ezeql/checheviewer"
+license = "MIT"
 
 [dependencies]
 eframe = { version = "0.36", default-features = false, features = [

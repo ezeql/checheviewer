@@ -118,3 +118,7 @@ To debug opening from Finder, where there is no terminal in sight:
 ```sh
 open -a /Applications/CheCheViewer.app photo.jpg --env CHECHEVIEWER_DEBUG=1 --stderr /tmp/cv.log
 ```
+
+## License
+
+[MIT](LICENSE)
