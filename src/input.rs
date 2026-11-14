@@ -2,28 +2,28 @@ use egui::{Key, Modifiers};
 
 use crate::model::ViewMode;
 
-/// Todo lo que el usuario puede pedir con el teclado. La UI no lee teclas
-/// directamente: lee `Action`s.
+/// Everything the user can request with the keyboard. The UI does not read
+/// keys directly: it reads `Action`s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     NextImage,
     PrevImage,
-    /// Una fila hacia arriba en la grilla.
+    /// One row up in the grid.
     MoveUp,
-    /// Una fila hacia abajo en la grilla.
+    /// One row down in the grid.
     MoveDown,
     FirstImage,
     LastImage,
-    /// Grilla → visor, abriendo la imagen seleccionada.
+    /// Grid → viewer, opening the selected image.
     EnterViewer,
-    /// Visor → grilla, conservando la posición.
+    /// Viewer → grid, keeping the position.
     BackToGrid,
     ToggleFullscreen,
     ZoomIn,
     ZoomOut,
-    /// Zoom 100 %, un píxel de imagen por píxel de pantalla.
+    /// 100 % zoom: one image pixel per screen pixel.
     ZoomActual,
-    /// Ajustar a la ventana.
+    /// Fit to window.
     ZoomFit,
     RotateLeft,
     RotateRight,
@@ -31,7 +31,7 @@ pub enum Action {
     Quit,
 }
 
-/// En qué vista tiene sentido un atajo.
+/// In which view a shortcut makes sense.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
     Global,
@@ -60,28 +60,28 @@ const fn b(mods: Modifiers, key: Key, action: Action, scope: Scope) -> Binding {
     Binding { mods, key, action, scope }
 }
 
-/// La tabla de atajos, al estilo IrfanView.
+/// The shortcut table, IrfanView style.
 ///
-/// Los atajos con modificador van primero: se consumen antes que su versión
-/// sin modificador para la misma tecla (p. ej. Cmd+0 antes que 0).
+/// Shortcuts with a modifier come first: they are consumed before the
+/// unmodified version of the same key (e.g. Cmd+0 before 0).
 pub const BINDINGS: &[Binding] = &[
-    // --- con modificador ---
+    // --- with modifier ---
     b(Modifiers::COMMAND, Key::O, Action::OpenFolder, Scope::Global),
     b(Modifiers::COMMAND, Key::Q, Action::Quit, Scope::Global),
     b(Modifiers::COMMAND, Key::Num0, Action::ZoomFit, Scope::ViewerOnly),
-    // --- navegación ---
+    // --- navigation ---
     b(Modifiers::NONE, Key::ArrowRight, Action::NextImage, Scope::Global),
     b(Modifiers::NONE, Key::ArrowLeft, Action::PrevImage, Scope::Global),
     b(Modifiers::NONE, Key::Space, Action::NextImage, Scope::ViewerOnly),
     b(Modifiers::NONE, Key::Backspace, Action::PrevImage, Scope::ViewerOnly),
     b(Modifiers::NONE, Key::ArrowUp, Action::MoveUp, Scope::GridOnly),
     b(Modifiers::NONE, Key::ArrowDown, Action::MoveDown, Scope::GridOnly),
-    // En el visor, arriba y abajo también avanzan: es un solo eje de recorrido.
+    // In the viewer, up and down also step: it is a single axis of traversal.
     b(Modifiers::NONE, Key::ArrowUp, Action::PrevImage, Scope::ViewerOnly),
     b(Modifiers::NONE, Key::ArrowDown, Action::NextImage, Scope::ViewerOnly),
     b(Modifiers::NONE, Key::Home, Action::FirstImage, Scope::Global),
     b(Modifiers::NONE, Key::End, Action::LastImage, Scope::Global),
-    // --- cambio de vista ---
+    // --- view switching ---
     b(Modifiers::NONE, Key::Enter, Action::EnterViewer, Scope::GridOnly),
     b(Modifiers::NONE, Key::Escape, Action::BackToGrid, Scope::ViewerOnly),
     b(Modifiers::NONE, Key::F, Action::ToggleFullscreen, Scope::Global),
@@ -90,16 +90,16 @@ pub const BINDINGS: &[Binding] = &[
     b(Modifiers::NONE, Key::Equals, Action::ZoomIn, Scope::ViewerOnly),
     b(Modifiers::NONE, Key::Minus, Action::ZoomOut, Scope::ViewerOnly),
     b(Modifiers::NONE, Key::Num0, Action::ZoomActual, Scope::ViewerOnly),
-    // --- rotación (solo la vista, no toca el archivo) ---
+    // --- rotation (view only, the file is untouched) ---
     b(Modifiers::NONE, Key::L, Action::RotateLeft, Scope::ViewerOnly),
     b(Modifiers::NONE, Key::R, Action::RotateRight, Scope::ViewerOnly),
 ];
 
-/// Consume del `InputState` las teclas que correspondan al modo actual y
-/// devuelve las acciones resultantes.
+/// Consumes from the `InputState` the keys that match the current mode and
+/// returns the resulting actions.
 ///
-/// Se llama **antes** de dibujar los widgets, para que las flechas no se las
-/// queden el `ScrollArea` de la grilla ni la tira de miniaturas.
+/// Called **before** drawing the widgets, so the arrow keys are not swallowed
+/// by the grid's `ScrollArea` or the thumbnail strip.
 pub fn poll(input: &mut egui::InputState, mode: ViewMode) -> Vec<Action> {
     BINDINGS
         .iter()
@@ -114,14 +114,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn no_hay_atajos_ambiguos_en_un_mismo_modo() {
+    fn no_ambiguous_shortcuts_in_the_same_mode() {
         for mode in [ViewMode::Grid, ViewMode::Viewer] {
             let active: Vec<_> = BINDINGS.iter().filter(|x| x.scope.applies_to(mode)).collect();
             for (i, a) in active.iter().enumerate() {
                 for other in &active[i + 1..] {
                     assert!(
                         !(a.key == other.key && a.mods == other.mods),
-                        "{:?}+{:?} está mapeada dos veces en {mode:?}: {:?} y {:?}",
+                        "{:?}+{:?} is mapped twice in {mode:?}: {:?} and {:?}",
                         a.mods,
                         a.key,
                         a.action,
@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn las_flechas_navegan_en_ambos_modos() {
+    fn arrows_navigate_in_both_modes() {
         for mode in [ViewMode::Grid, ViewMode::Viewer] {
             for (key, expected) in
                 [(Key::ArrowRight, Action::NextImage), (Key::ArrowLeft, Action::PrevImage)]
@@ -142,13 +142,13 @@ mod tests {
                     .iter()
                     .find(|x| x.key == key && x.scope.applies_to(mode))
                     .map(|x| x.action);
-                assert_eq!(found, Some(expected), "falta {key:?} en {mode:?}");
+                assert_eq!(found, Some(expected), "missing {key:?} in {mode:?}");
             }
         }
     }
 
     #[test]
-    fn los_atajos_con_modificador_van_antes_que_los_de_la_misma_tecla_sin_el() {
+    fn modified_shortcuts_come_before_unmodified_ones_of_the_same_key() {
         for (i, binding) in BINDINGS.iter().enumerate() {
             if binding.mods == Modifiers::NONE {
                 continue;
@@ -158,7 +158,7 @@ mod tests {
             if let Some(plain) = plain {
                 assert!(
                     i < plain,
-                    "{:?} debería consumirse antes que su versión sin modificador",
+                    "{:?} should be consumed before its unmodified version",
                     binding.key
                 );
             }

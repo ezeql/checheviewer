@@ -2,21 +2,21 @@ use std::path::{Path, PathBuf};
 
 use lru::LruCache;
 
-/// Presupuesto por defecto del cache de imágenes.
+/// Default budget of the image cache.
 ///
-/// Se mide en bytes de píxeles, no en cantidad de imágenes: diez fotos de
-/// 50 MP y mil miniaturas ocupan cosas muy distintas, y lo que importa es la
-/// memoria, no el conteo.
+/// Measured in pixel bytes, not image count: ten 50 MP photos and a thousand
+/// thumbnails take very different amounts of space, and what matters is
+/// memory, not the count.
 pub const DEFAULT_BUDGET: usize = 1024 * 1024 * 1024; // 1 GiB
 
-/// Presupuesto del cache de miniaturas.
+/// Budget of the thumbnail cache.
 ///
-/// Una miniatura de 256×256 RGBA son 256 KiB, así que esto alcanza para unas
-/// mil celdas: bastante más de lo que entra en pantalla, y se recorre una
-/// carpeta grande sin volver a decodificar lo ya visto.
+/// A 256×256 RGBA thumbnail is 256 KiB, so this fits about a thousand cells:
+/// well beyond what fits on screen, and a large folder can be scrolled
+/// through without re-decoding what was already seen.
 pub const THUMBNAIL_BUDGET: usize = 256 * 1024 * 1024; // 256 MiB
 
-/// Cache LRU acotado por bytes.
+/// LRU cache bounded by bytes.
 pub struct ByteCache<V> {
     entries: LruCache<PathBuf, (V, usize)>,
     bytes: usize,
@@ -28,17 +28,17 @@ impl<V> ByteCache<V> {
         Self { entries: LruCache::unbounded(), bytes: 0, budget }
     }
 
-    /// Devuelve el valor y lo marca como recién usado.
+    /// Returns the value and marks it as most recently used.
     pub fn get(&mut self, path: &Path) -> Option<&V> {
         self.entries.get(path).map(|(value, _)| value)
     }
 
-    /// ¿Está en el cache? No altera el orden de uso.
+    /// Is it in the cache? Doesn't change the usage order.
     pub fn contains(&self, path: &Path) -> bool {
         self.entries.peek(path).is_some()
     }
 
-    /// Guarda un valor de `size` bytes y desaloja lo más viejo si hace falta.
+    /// Stores a value of `size` bytes and evicts the oldest if needed.
     pub fn insert(&mut self, path: PathBuf, value: V, size: usize) {
         if let Some((_, previous)) = self.entries.put(path, (value, size)) {
             self.bytes -= previous;
@@ -48,8 +48,8 @@ impl<V> ByteCache<V> {
     }
 
     fn evict(&mut self) {
-        // Nunca se desaloja la última entrada: es la que el usuario está
-        // mirando, y una sola foto puede superar el presupuesto por sí sola.
+        // The last entry is never evicted: it's the one the user is looking
+        // at, and a single photo can exceed the budget on its own.
         while self.bytes > self.budget && self.entries.len() > 1 {
             match self.entries.pop_lru() {
                 Some((_, (_, size))) => self.bytes -= size,
@@ -85,7 +85,7 @@ mod tests {
     }
 
     #[test]
-    fn guarda_y_devuelve() {
+    fn stores_and_returns() {
         let mut cache: ByteCache<u32> = ByteCache::new(100);
         cache.insert(path("a"), 1, 10);
         assert_eq!(cache.get(&path("a")), Some(&1));
@@ -95,11 +95,11 @@ mod tests {
     }
 
     #[test]
-    fn desaloja_lo_mas_viejo_al_pasarse_del_presupuesto() {
+    fn evicts_oldest_when_over_budget() {
         let mut cache: ByteCache<u32> = ByteCache::new(100);
         cache.insert(path("a"), 1, 50);
         cache.insert(path("b"), 2, 50);
-        cache.insert(path("c"), 3, 50); // se pasa: se va "a"
+        cache.insert(path("c"), 3, 50); // over budget: "a" goes
 
         assert!(!cache.contains(&path("a")));
         assert!(cache.contains(&path("b")));
@@ -108,28 +108,28 @@ mod tests {
     }
 
     #[test]
-    fn usar_una_entrada_la_salva_del_desalojo() {
+    fn using_an_entry_saves_it_from_eviction() {
         let mut cache: ByteCache<u32> = ByteCache::new(100);
         cache.insert(path("a"), 1, 50);
         cache.insert(path("b"), 2, 50);
-        cache.get(&path("a")); // "a" pasa a ser la más reciente
+        cache.get(&path("a")); // "a" becomes the most recent
         cache.insert(path("c"), 3, 50);
 
-        assert!(cache.contains(&path("a")), "la entrada recién usada no debería desalojarse");
+        assert!(cache.contains(&path("a")), "the just-used entry should not be evicted");
         assert!(!cache.contains(&path("b")));
     }
 
     #[test]
-    fn nunca_desaloja_la_unica_entrada_aunque_no_entre() {
+    fn never_evicts_the_only_entry_even_if_it_does_not_fit() {
         let mut cache: ByteCache<u32> = ByteCache::new(100);
-        cache.insert(path("gigante"), 1, 5_000);
+        cache.insert(path("huge"), 1, 5_000);
 
-        assert!(cache.contains(&path("gigante")), "la imagen actual tiene que sobrevivir");
+        assert!(cache.contains(&path("huge")), "the current image must survive");
         assert_eq!(cache.len(), 1);
     }
 
     #[test]
-    fn reemplazar_una_clave_no_duplica_los_bytes() {
+    fn replacing_a_key_does_not_duplicate_bytes() {
         let mut cache: ByteCache<u32> = ByteCache::new(1_000);
         cache.insert(path("a"), 1, 100);
         cache.insert(path("a"), 2, 30);
@@ -140,17 +140,17 @@ mod tests {
     }
 
     #[test]
-    fn el_uso_de_memoria_no_crece_indefinidamente() {
+    fn memory_use_does_not_grow_unbounded() {
         let mut cache: ByteCache<u32> = ByteCache::new(1_000);
         for i in 0..500 {
             cache.insert(path(&format!("img{i}")), i, 100);
-            assert!(cache.bytes() <= 1_000, "el cache se pasó del presupuesto en la vuelta {i}");
+            assert!(cache.bytes() <= 1_000, "cache went over budget at iteration {i}");
         }
         assert_eq!(cache.len(), 10);
     }
 
     #[test]
-    fn clear_libera_todo() {
+    fn clear_frees_everything() {
         let mut cache: ByteCache<u32> = ByteCache::new(1_000);
         cache.insert(path("a"), 1, 100);
         cache.clear();

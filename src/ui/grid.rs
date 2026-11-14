@@ -3,24 +3,24 @@ use egui::{text::LayoutJob, Align2, Color32, CornerRadius, FontId, Rect, Sense, 
 use crate::app::App;
 use crate::model::ViewMode;
 
-/// Lado de la miniatura dentro de la celda.
+/// Side of the thumbnail within the cell.
 const THUMB_SIDE: f32 = 150.0;
-/// Alto reservado para el nombre del archivo, debajo de la miniatura.
+/// Height reserved for the file name, below the thumbnail.
 const LABEL_HEIGHT: f32 = 18.0;
-/// Separación entre celdas.
+/// Spacing between cells.
 const GAP: f32 = 10.0;
 
 const CELL: Vec2 = Vec2::new(THUMB_SIDE, THUMB_SIDE + LABEL_HEIGHT);
 
-/// Grilla de miniaturas del directorio.
+/// Thumbnail grid for the directory.
 ///
-/// Solo se dibujan —y se piden— las filas visibles: una carpeta de miles de
-/// fotos abre igual de rápido que una de diez.
+/// Only the visible rows are drawn (and requested): a folder with thousands
+/// of photos opens as fast as one with ten.
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     egui::CentralPanel::default().show(ui, |ui| {
         if app.session.is_empty() {
             ui.centered_and_justified(|ui| {
-                ui.label("Arrastrá una carpeta acá para empezar");
+                ui.label("Drop a folder here to start");
             });
             return;
         }
@@ -33,15 +33,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
         let mut scroll = egui::ScrollArea::vertical().auto_shrink([false, false]);
 
-        // Cuando la selección se movió con el teclado hay que traerla a la
-        // vista. No alcanza con `scroll_to_rect` sobre la celda: si quedó
-        // fuera del rango visible, esa celda no llega a dibujarse.
+        // When the selection was moved with the keyboard it has to be brought
+        // into view. `scroll_to_rect` on the cell is not enough: if it fell
+        // outside the visible range, that cell never gets drawn.
         if app.scroll_to_selection {
             app.scroll_to_selection = false;
             let row = app.session.index() / columns;
-            // `show_rows` le suma `item_spacing.y` a cada fila: sin él, el
-            // error crece 3 px por fila y en carpetas grandes la selección
-            // queda fuera de pantalla.
+            // `show_rows` adds `item_spacing.y` to each row: without it, the
+            // error grows 3 px per row and in large folders the selection
+            // ends up off screen.
             let pitch = row_height + ui.spacing().item_spacing.y;
             let target = row as f32 * pitch - (ui.available_height() - row_height) / 2.0;
             scroll = scroll.vertical_scroll_offset(target.max(0.0));
@@ -84,12 +84,12 @@ enum Interaction {
     Opened,
 }
 
-/// Dibuja una celda y devuelve lo que hizo el usuario con ella.
+/// Draws a cell and returns what the user did with it.
 fn cell(app: &mut App, ui: &mut egui::Ui, index: usize) -> Option<Interaction> {
     let (rect, response) = ui.allocate_exact_size(CELL, Sense::click());
 
-    // Clonar corta el préstamo de `app.session` antes de pedirle la miniatura
-    // a `app`, que necesita acceso mutable.
+    // Cloning ends the borrow of `app.session` before asking `app` for the
+    // thumbnail, which needs mutable access.
     let entry = app.session.entries.get(index)?;
     let (path, name) = (entry.path.clone(), entry.file_name.clone());
     let selected = index == app.session.index();
@@ -146,8 +146,8 @@ fn cell(app: &mut App, ui: &mut egui::Ui, index: usize) -> Option<Interaction> {
     }
 }
 
-/// Nombre del archivo debajo de la miniatura, truncado con puntos suspensivos
-/// si no entra.
+/// File name below the thumbnail, truncated with an ellipsis if it does not
+/// fit.
 fn draw_label(ui: &egui::Ui, cell_rect: Rect, name: &str, selected: bool) {
     let color = if selected { ui.visuals().strong_text_color() } else { ui.visuals().text_color() };
 
@@ -168,7 +168,7 @@ fn draw_label(ui: &egui::Ui, cell_rect: Rect, name: &str, selected: bool) {
     ui.painter().galley(origin, galley, color);
 }
 
-/// Cuántas columnas entran en `width`.
+/// How many columns fit in `width`.
 fn columns_that_fit(width: f32) -> usize {
     (((width + GAP) / (CELL.x + GAP)).floor() as usize).max(1)
 }
@@ -178,17 +178,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn calcula_las_columnas_segun_el_ancho() {
-        // Una celda entra siempre, aunque la ventana sea más angosta que ella.
+    fn computes_columns_from_width() {
+        // One cell always fits, even if the window is narrower than it.
         assert_eq!(columns_that_fit(10.0), 1);
         assert_eq!(columns_that_fit(THUMB_SIDE), 1);
-        // Dos celdas más el espacio entre ellas.
+        // Two cells plus the space between them.
         assert_eq!(columns_that_fit(THUMB_SIDE * 2.0 + GAP), 2);
         assert_eq!(columns_that_fit(THUMB_SIDE * 2.0 + GAP - 1.0), 1);
     }
 
     #[test]
-    fn el_ancho_de_una_ventana_tipica_da_varias_columnas() {
+    fn typical_window_width_gives_several_columns() {
         assert!(columns_that_fit(1280.0) >= 7);
     }
 }

@@ -1,8 +1,8 @@
 #!/bin/sh
-# Genera bundle/AppIcon.icns. Requiere ImageMagick (brew install imagemagick).
+# Generates bundle/AppIcon.icns. Requires ImageMagick (brew install imagemagick).
 #
-# El ícono es una foto estilizada — marco blanco, montaña y sol — sobre un
-# fondo con degradado, con las esquinas redondeadas al estilo de macOS.
+# The icon is a stylized photo (white frame, mountain and sun) on a gradient
+# background, with macOS-style rounded corners.
 set -eu
 
 cd "$(dirname "$0")"
@@ -10,16 +10,16 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
 S=1024
-R=225 # radio de las esquinas
+R=225 # corner radius
 
-# Fondo: degradado recortado con una máscara de esquinas redondeadas.
+# Background: gradient clipped by a rounded-corner mask.
 magick -size ${S}x${S} gradient:'#5b8def-#8b5cf6' "$WORK/gradient.png"
 magick -size ${S}x${S} xc:black -fill white \
 	-draw "roundrectangle 0,0 $((S - 1)),$((S - 1)) $R,$R" -alpha off "$WORK/mask.png"
 magick "$WORK/gradient.png" "$WORK/mask.png" \
 	-alpha off -compose CopyOpacity -composite "$WORK/base.png"
 
-# La "foto": marco blanco con montaña y sol.
+# The "photo": white frame with a mountain and a sun.
 magick -size ${S}x${S} xc:none \
 	-fill white -draw "roundrectangle 205,255 819,769 28,28" \
 	-fill '#5b8def' -draw "polygon 255,719 470,420 640,719" \
@@ -29,7 +29,7 @@ magick -size ${S}x${S} xc:none \
 
 magick "$WORK/base.png" "$WORK/photo.png" -compose over -composite "$WORK/icon.png"
 
-# Todos los tamaños que pide iconutil.
+# Every size iconutil asks for.
 ICONSET="$WORK/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
@@ -38,4 +38,4 @@ for size in 16 32 128 256 512; do
 done
 
 iconutil -c icns "$ICONSET" -o AppIcon.icns
-echo "Generado $(pwd)/AppIcon.icns"
+echo "Generated $(pwd)/AppIcon.icns"

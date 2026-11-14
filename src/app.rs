@@ -13,71 +13,71 @@ use crate::session::Session;
 use crate::ui;
 use crate::view::View;
 
-/// Cuántas imágenes precargar hacia adelante y hacia atrás.
+/// How many images to prefetch ahead and behind.
 ///
-/// Adelante pesa más porque casi todo el mundo avanza: al mirar la número 5
-/// ya están pedidas la 6 y la 7, y la flecha se siente instantánea.
+/// Ahead weighs more because almost everyone moves forward: while looking at
+/// number 5, 6 and 7 are already requested, so the arrow key feels instant.
 const PREFETCH_AHEAD: usize = 2;
 const PREFETCH_BEHIND: usize = 1;
 
-/// Una imagen ya subida a la GPU y lista para dibujar.
+/// An image already uploaded to the GPU and ready to draw.
 pub struct LoadedImage {
     pub texture: TextureHandle,
-    /// Tamaño de la textura, que puede ser menor al del archivo si hubo que
-    /// reducirla para entrar en la GPU.
+    /// Size of the texture, which may be smaller than the file's if it had
+    /// to be downscaled to fit on the GPU.
     pub size: egui::Vec2,
-    /// Tamaño real del archivo, que es lo que se le muestra al usuario.
+    /// Actual size of the file, which is what is shown to the user.
     pub original_size: [u32; 2],
-    /// Bytes de píxeles, para el presupuesto del cache.
+    /// Pixel bytes, for the cache budget.
     pub bytes: usize,
 }
 
 pub struct App {
-    /// Navegación: carpeta, lista de imágenes e índice actual.
+    /// Navigation: folder, image list and current index.
     pub session: Session,
-    /// La imagen a dibujar en este frame, si ya está lista.
+    /// The image to draw this frame, if it is ready.
     pub current: Option<Arc<LoadedImage>>,
-    /// Error de la imagen actual, mostrado en lugar de ella.
+    /// Error for the current image, shown in its place.
     pub error: Option<String>,
-    /// Error al abrir una carpeta o un archivo. Va aparte de `error` porque
-    /// ese se recalcula en cada frame según la imagen actual.
+    /// Error opening a folder or file. Kept apart from `error` because that
+    /// one is recomputed every frame from the current image.
     pub open_error: Option<String>,
 
-    /// Encuadre del visor: ajuste, zoom, paneo y rotación.
+    /// Viewer framing: fit, zoom, pan and rotation.
     pub view: View,
-    /// Área en la que se dibujó la imagen en el último frame. El zoom por
-    /// teclado la necesita para saber respecto de qué ajustar.
+    /// Area where the image was drawn in the last frame. Keyboard zoom needs
+    /// it to know what to adjust against.
     viewport: Rect,
-    /// Cuántas columnas dibujó la grilla en el último frame, para que ↑ y ↓
-    /// sepan cuánto moverse.
+    /// How many columns the grid drew in the last frame, so ↑ and ↓ know how
+    /// far to move.
     pub grid_columns: usize,
-    /// La selección cambió por teclado y la grilla tiene que traerla a la
-    /// vista.
+    /// The selection changed via keyboard and the grid must scroll it into
+    /// view.
     pub scroll_to_selection: bool,
 
     loader: Loader,
     cache: ByteCache<Arc<LoadedImage>>,
     thumbnails: ByteCache<Arc<LoadedImage>>,
-    /// Pedidos en vuelo, para no encolar dos veces lo mismo.
+    /// In-flight requests, to avoid queueing the same thing twice.
     pending: HashSet<(PathBuf, Kind)>,
-    /// Archivos que fallaron, para no reintentarlos en cada frame.
+    /// Files that failed, to avoid retrying them every frame.
     failed: HashMap<PathBuf, String>,
-    /// Último índice para el que se programaron cargas.
+    /// Last index for which loads were scheduled.
     scheduled_for: Option<usize>,
-    /// Qué archivo se está mostrando, para resetear el encuadre al cambiar.
+    /// Which file is being shown, to reset the framing when it changes.
     shown_path: Option<PathBuf>,
     fullscreen: bool,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, start: Option<PathBuf>) -> Self {
-        // Los workers despiertan a la UI cuando terminan de decodificar; sin
-        // esto la imagen recién cargada no aparecería hasta el próximo evento
-        // de mouse o teclado.
+        // Workers wake the UI when they finish decoding; without this the
+        // freshly loaded image wouldn't show up until the next mouse or
+        // keyboard event.
         let ctx = cc.egui_ctx.clone();
         let loader = Loader::new(move || ctx.request_repaint());
-        // Para que un archivo abierto desde el Finder despierte a la interfaz
-        // aunque esté quieta esperando eventos.
+        // So a file opened from Finder wakes the UI even if it is idle
+        // waiting for events.
         platform::set_repaint_context(&cc.egui_ctx);
 
         let mut app = Self {
@@ -108,7 +108,7 @@ impl App {
         match self.session.open_path(path) {
             Ok(()) => {
                 crate::trace!(
-                    "abierto {} → {} imágenes, en la {}",
+                    "opened {} → {} images, at #{}",
                     path.display(),
                     self.session.len(),
                     self.session.index() + 1
@@ -124,7 +124,7 @@ impl App {
                 self.loader.invalidate_all();
             }
             Err(err) => {
-                crate::trace!("no se pudo abrir {}: {err:#}", path.display());
+                crate::trace!("could not open {}: {err:#}", path.display());
                 self.open_error = Some(format!("{err:#}"));
             }
         }
@@ -177,13 +177,13 @@ impl App {
         }
     }
 
-    /// Abre el diálogo nativo para elegir una carpeta.
+    /// Opens the native dialog to pick a folder.
     ///
-    /// Es modal y bloquea el hilo de UI mientras está abierto, que es
-    /// exactamente lo que hace cualquier app de macOS con ⌘O.
+    /// It is modal and blocks the UI thread while open, which is exactly what
+    /// any macOS app does with ⌘O.
     pub fn pick_folder(&mut self) {
         let start = self.session.dir.clone();
-        let mut dialog = rfd::FileDialog::new().set_title("Abrir carpeta de imágenes");
+        let mut dialog = rfd::FileDialog::new().set_title("Open image folder");
         if let Some(dir) = start {
             dialog = dialog.set_directory(dir);
         }
@@ -192,22 +192,22 @@ impl App {
         }
     }
 
-    /// Mueve la selección y, si cambió, pide que la grilla la traiga a la
-    /// vista.
+    /// Moves the selection and, if it changed, asks the grid to scroll it
+    /// into view.
     fn move_by(&mut self, delta: isize) {
         self.scroll_to_selection |= self.session.step(delta);
     }
 
-    /// Tamaño de la imagen cargada, o algo razonable si todavía no hay
-    /// ninguna.
+    /// Size of the loaded image, or something reasonable if there is none
+    /// yet.
     fn image_size(&self) -> egui::Vec2 {
         self.current.as_ref().map(|img| img.size).unwrap_or(egui::vec2(1.0, 1.0))
     }
 
-    /// Recoge lo que terminaron los workers y lo sube a la GPU.
+    /// Collects what the workers finished and uploads it to the GPU.
     ///
-    /// Subir texturas es lo único de la carga que tiene que pasar sí o sí en
-    /// el hilo de UI.
+    /// Uploading textures is the only part of loading that must happen on the
+    /// UI thread.
     fn collect_results(&mut self, ctx: &Context) {
         for result in self.loader.poll().collect::<Vec<_>>() {
             self.pending.remove(&(result.path.clone(), result.kind));
@@ -215,9 +215,9 @@ impl App {
                 Outcome::Image(image) => {
                     let name = format!("{}#{:?}", result.path.display(), result.kind);
                     let size = [image.width as usize, image.height as usize];
-                    // ImageIO devuelve el color ya multiplicado por el alfa;
-                    // el crate `image`, no. Confundirlos tiñe de negro las
-                    // zonas semitransparentes.
+                    // ImageIO returns color already multiplied by alpha; the
+                    // `image` crate doesn't. Mixing them up tints
+                    // semi-transparent areas black.
                     let color = if image.premultiplied {
                         ColorImage::from_rgba_premultiplied(size, &image.pixels)
                     } else {
@@ -239,29 +239,29 @@ impl App {
                 Outcome::Error(err) => {
                     self.failed.insert(result.path, err);
                 }
-                // Quedó obsoleto: si todavía hace falta, se vuelve a pedir en
-                // el próximo frame.
+                // Became stale: if still needed, it is requested again next
+                // frame.
                 Outcome::Cancelled => {}
             }
         }
     }
 
-    /// Pide la imagen actual y precarga sus vecinas.
+    /// Requests the current image and prefetches its neighbors.
     fn schedule_loads(&mut self) {
         let index = self.session.index();
         if self.session.is_empty() {
             return;
         }
 
-        // Al moverse cambia qué es urgente: lo encolado deja de servir.
+        // Moving changes what is urgent: whatever was queued is no longer useful.
         if self.scheduled_for != Some(index) {
             self.loader.invalidate();
             self.scheduled_for = Some(index);
         }
 
-        // Se pide en cada frame aunque nada haya cambiado: un pedido que vuelve
-        // `Cancelled` sale de `pending` y hay que reencolarlo. `request` ya
-        // descarta lo que está en cache o en vuelo, así que repetirlo es gratis.
+        // Requested every frame even if nothing changed: a request that comes
+        // back `Cancelled` leaves `pending` and must be requeued. `request`
+        // already skips what is cached or in flight, so repeating is free.
         self.request(index, Priority::Visible);
         for offset in 1..=PREFETCH_AHEAD {
             self.request(index + offset, Priority::Prefetch);
@@ -280,15 +280,15 @@ impl App {
             return;
         }
         if !self.pending.insert((path.clone(), Kind::Full)) {
-            return; // ya estaba pedido
+            return; // already requested
         }
         self.loader.request(&path, Kind::Full, priority);
     }
 
-    /// Devuelve la miniatura de `path`, pidiéndola si todavía no está.
+    /// Returns the thumbnail for `path`, requesting it if not there yet.
     ///
-    /// La llama la grilla para cada celda visible: pedir solo lo que se ve es
-    /// lo que hace que una carpeta de miles de fotos abra al instante.
+    /// The grid calls it for every visible cell: requesting only what is
+    /// visible is what makes a folder of thousands of photos open instantly.
     pub fn thumbnail(&mut self, path: &Path) -> Option<Arc<LoadedImage>> {
         if let Some(thumb) = self.thumbnails.get(path) {
             return Some(Arc::clone(thumb));
@@ -302,12 +302,12 @@ impl App {
         None
     }
 
-    /// ¿Falló la carga de este archivo?
+    /// Did loading this file fail?
     pub fn has_failed(&self, path: &Path) -> bool {
         self.failed.contains_key(path)
     }
 
-    /// Deja en `current` / `error` lo que corresponde dibujar este frame.
+    /// Leaves in `current` / `error` what should be drawn this frame.
     fn refresh_current(&mut self) {
         let Some(entry) = self.session.current() else {
             self.current = None;
@@ -316,22 +316,22 @@ impl App {
         };
         let path = entry.path.clone();
 
-        // Cada imagen empieza ajustada a la ventana: heredar el zoom y la
-        // rotación de la anterior desorienta más de lo que ayuda.
+        // Each image starts fitted to the window: inheriting the previous
+        // one's zoom and rotation is more disorienting than helpful.
         if self.shown_path.as_ref() != Some(&path) {
             self.shown_path = Some(path.clone());
             self.view.reset();
         }
 
         self.error = self.failed.get(&path).cloned();
-        // `get` además marca la entrada como recién usada, que es justo lo que
-        // queremos: la imagen visible nunca debería ser la primera candidata a
-        // desalojo.
+        // `get` also marks the entry as most recently used, which is exactly
+        // what we want: the visible image should never be the first eviction
+        // candidate.
         self.current = self.cache.get(&path).cloned();
     }
 
-    /// Registra el área donde se dibuja la imagen, para que el zoom por
-    /// teclado sepa respecto de qué encuadre trabajar.
+    /// Records the area where the image is drawn, so keyboard zoom knows
+    /// which framing to work against.
     pub fn set_viewport(&mut self, rect: Rect) {
         self.viewport = rect;
     }
@@ -340,14 +340,14 @@ impl App {
         self.viewport
     }
 
-    /// ¿Se está esperando la imagen actual?
+    /// Are we waiting for the current image?
     pub fn is_loading(&self) -> bool {
         self.session
             .current()
             .is_some_and(|entry| self.pending.contains(&(entry.path.clone(), Kind::Full)))
     }
 
-    /// Memoria ocupada por las imágenes en cache.
+    /// Memory used by the cached images.
     pub fn cached_bytes(&self) -> usize {
         self.cache.bytes()
     }
@@ -357,18 +357,18 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 
-        // El input se consume antes de dibujar, para que los widgets no se
-        // queden con las flechas.
+        // Input is consumed before drawing, so widgets don't swallow the
+        // arrow keys.
         for action in ctx.input_mut(|i| input::poll(i, self.session.mode)) {
             self.apply(action, &ctx);
         }
 
-        // Doble clic en una imagen desde el Finder, o "Abrir con".
+        // Double-click on an image from Finder, or "Open With".
         if let Some(path) = platform::take_requested_path() {
             self.open_path(&path);
         }
 
-        // Arrastrar y soltar una carpeta o una imagen sobre la ventana.
+        // Drag and drop a folder or an image onto the window.
         let dropped = ctx.input(|i| i.raw.dropped_files.first().map(|f| f.path().to_path_buf()));
         if let Some(path) = dropped {
             self.open_path(&path);

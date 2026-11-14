@@ -1,4 +1,4 @@
-// En modo release no abrimos una consola detrás de la ventana.
+// In release mode, don't open a console behind the window.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
@@ -7,13 +7,13 @@ use checheviewer::app::App;
 use checheviewer::platform;
 
 fn main() -> eframe::Result<()> {
-    // Antes de abrir la ventana: si al usuario le abrimos la app haciendo
-    // doble clic en una imagen, el sistema manda el archivo apenas arranca y
-    // hay que estar escuchando.
+    // Before opening the window: if the user launches the app by double-
+    // clicking an image, the system sends the file as soon as it starts, so
+    // we must already be listening.
     platform::install_open_handler();
 
     let start = std::env::args_os().nth(1).map(PathBuf::from);
-    checheviewer::trace!("iniciando; argumento: {start:?}");
+    checheviewer::trace!("starting; argument: {start:?}");
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

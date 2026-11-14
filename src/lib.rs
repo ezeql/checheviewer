@@ -1,7 +1,7 @@
-//! CheCheViewer — visor de imágenes con foco en el teclado.
+//! CheCheViewer — a keyboard-focused image viewer.
 //!
-//! La lógica vive acá y no en el binario para poder testearla sin abrir una
-//! ventana.
+//! The logic lives here rather than in the binary so it can be tested
+//! without opening a window.
 
 #[macro_use]
 pub mod diag;

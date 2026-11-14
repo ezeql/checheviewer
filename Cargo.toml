@@ -2,7 +2,8 @@
 name = "checheviewer"
 version = "0.1.0"
 edition = "2021"
-description = "Visor de imágenes rápido y con foco en el teclado, al estilo IrfanView"
+description = "Fast, keyboard-driven image viewer for macOS, inspired by IrfanView"
+repository = "https://github.com/ezeql/checheviewer"
 
 [dependencies]
 eframe = { version = "0.36", default-features = false, features = [
@@ -18,8 +19,8 @@ crossbeam-channel = "0.5"
 lru = "0.18"
 rfd = "0.17"
 
-# Decodificación nativa: HEIC, RAW y miniaturas embebidas, todo lo que abre
-# Preview.app. Sin dependencias de Homebrew.
+# Native decoding: HEIC, RAW and embedded thumbnails, everything Preview.app
+# opens. No Homebrew dependencies.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-core-foundation = "0.3"
 objc2-core-graphics = "0.3"
@@ -31,7 +32,7 @@ block2 = "0.6"
 opt-level = 3
 lto = "thin"
 
-# Sin esto, decodificar un JPEG en modo debug es insoportablemente lento:
-# las dependencias se compilan optimizadas aunque nuestro código no lo esté.
+# Without this, decoding a JPEG in debug mode is unbearably slow: dependencies
+# are built optimized even though our own code is not.
 [profile.dev.package."*"]
 opt-level = 2

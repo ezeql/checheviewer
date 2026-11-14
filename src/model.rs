@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-/// Una imagen del directorio actual.
+/// An image in the current directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub path: PathBuf,
-    /// Nombre del archivo, cacheado para no re-derivarlo en cada frame.
+    /// File name, cached so it isn't re-derived every frame.
     pub file_name: String,
 }
 
@@ -16,12 +16,12 @@ impl Entry {
     }
 }
 
-/// Cuál de las dos vistas está activa.
+/// Which of the two views is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
-    /// Grilla de miniaturas del directorio.
+    /// Grid of thumbnails for the directory.
     #[default]
     Grid,
-    /// Una sola imagen a pantalla completa, navegable con las flechas.
+    /// A single full-screen image, navigable with the arrow keys.
     Viewer,
 }

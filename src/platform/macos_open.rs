@@ -1,12 +1,12 @@
-//! Abrir archivos desde el Finder.
+//! Opening files from Finder.
 //!
-//! Cuando se hace doble clic en una imagen, o se usa "Abrir con", macOS **no**
-//! pasa la ruta por `argv`: manda un Apple Event `kAEOpenDocuments`. Una app
-//! que solo mire sus argumentos arranca vacía, como si la hubieran abierto
-//! desde el Dock.
+//! When an image is double-clicked, or "Open With" is used, macOS does **not**
+//! pass the path through `argv`: it sends a `kAEOpenDocuments` Apple Event. An
+//! app that only looks at its arguments starts empty, as if it had been
+//! opened from the Dock.
 //!
-//! Acá se instala un handler para ese evento antes de arrancar la ventana. Las
-//! rutas que llegan se guardan en una cola que la app vacía en el próximo
+//! Here a handler for that event is installed before the window starts. The
+//! paths that arrive are stored in a queue that the app drains on the next
 //! frame.
 
 use std::ffi::c_void;
@@ -18,14 +18,14 @@ use block2::RcBlock;
 use objc2_core_foundation::{CFStringBuiltInEncodings, CFURL};
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSString};
 
-/// Rutas recibidas del sistema y todavía no consumidas.
+/// Paths received from the system and not yet consumed.
 static PENDING: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 
-/// Para sacar a la interfaz de su siesta cuando llega un archivo: sin esto,
-/// egui puede estar esperando un evento de mouse y no redibujar.
+/// To wake the UI from its nap when a file arrives: without this, egui may
+/// be waiting for a mouse event and not redraw.
 static REPAINT: OnceLock<egui::Context> = OnceLock::new();
 
-// Códigos de cuatro letras de la API de Apple Events.
+// Four-letter codes from the Apple Events API.
 const K_CORE_EVENT_CLASS: u32 = four_cc(b"aevt");
 const K_AE_OPEN_DOCUMENTS: u32 = four_cc(b"odoc");
 const KEY_DIRECT_OBJECT: u32 = four_cc(b"----");
@@ -81,41 +81,41 @@ unsafe extern "C-unwind" {
     fn AEDisposeDesc(desc: *mut AEDesc) -> i16;
 }
 
-/// Instala el handler. Hay que llamarla antes de arrancar la ventana, para no
-/// perder el evento con el que el sistema abre la app.
+/// Installs the handler. It must be called before the window starts, so the
+/// event the system uses to open the app isn't lost.
 pub fn install(ctx_for_repaint: Option<egui::Context>) {
     if let Some(ctx) = ctx_for_repaint {
         let _ = REPAINT.set(ctx);
     }
 
-    // SAFETY: la firma coincide con la que espera Carbon y el handler es una
-    // función estática que vive toda la ejecución del programa.
+    // SAFETY: the signature matches what Carbon expects and the handler is a
+    // static function that lives for the whole program run.
     let status =
         unsafe { AEInstallEventHandler(K_CORE_EVENT_CLASS, K_AE_OPEN_DOCUMENTS, on_open, 0, 0) };
 
     if status != NO_ERR {
-        // No es fatal: la app sigue andando, solo que abrirla desde el Finder
-        // no traerá el archivo.
-        eprintln!("checheviewer: no se pudo escuchar aperturas del Finder (error {status})");
+        // Not fatal: the app keeps working, but opening it from Finder won't
+        // bring the file.
+        eprintln!("checheviewer: could not listen for Finder open requests (error {status})");
     }
 }
 
-/// Vuelve a instalar el handler apenas AppKit termina de registrar los suyos.
+/// Reinstalls the handler as soon as AppKit finishes registering its own.
 ///
-/// Este es el punto delicado de todo el módulo: `NSApplication` registra sus
-/// propios handlers de Apple Events mientras arranca y pisa el nuestro, así
-/// que instalarlo solo desde `main` no alcanza. La notificación
-/// `willFinishLaunching` llega después de ese registro y antes de que se
-/// procese el evento con el que el Finder abrió la app, que es exactamente la
-/// ventana que necesitamos para no perder el primer archivo.
+/// This is the delicate point of the whole module: `NSApplication` registers
+/// its own Apple Event handlers while starting up and overwrites ours, so
+/// installing it only from `main` isn't enough. The `willFinishLaunching`
+/// notification arrives after that registration and before the event Finder
+/// used to open the app is processed, which is exactly the window we need to
+/// avoid losing the first file.
 pub fn install_on_launch() {
     let name = NSString::from_str("NSApplicationWillFinishLaunchingNotification");
     let block = RcBlock::new(move |_notification: NonNull<NSNotification>| {
         install(None);
     });
 
-    // SAFETY: el bloque no captura nada prestado y el observador se mantiene
-    // vivo mientras dure el programa.
+    // SAFETY: the block captures nothing borrowed and the observer is kept
+    // alive for the lifetime of the program.
     let observer = unsafe {
         NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
             Some(&name),
@@ -125,29 +125,29 @@ pub fn install_on_launch() {
         )
     };
 
-    // El centro de notificaciones no retiene ni al observador ni al bloque:
-    // hay que mantenerlos vivos a mano.
+    // The notification center retains neither the observer nor the block:
+    // they have to be kept alive by hand.
     std::mem::forget(observer);
     std::mem::forget(block);
 }
 
-/// Registra el contexto de egui una vez que existe, para poder despertar la
-/// interfaz cuando llegue un archivo.
+/// Registers the egui context once it exists, so the UI can be woken up when
+/// a file arrives.
 pub fn set_repaint_context(ctx: egui::Context) {
     let _ = REPAINT.set(ctx);
 }
 
-/// Saca la última ruta recibida, si hay alguna.
+/// Takes the last received path, if any.
 ///
-/// Si el usuario seleccionó varias imágenes se queda con una sola: la app
-/// muestra la carpeta que la contiene, así que las demás igual van a estar a
-/// un par de flechas de distancia.
+/// If the user selected several images, only one is kept: the app shows the
+/// folder that contains it, so the others will be a couple of arrow presses
+/// away anyway.
 pub fn take_pending() -> Option<PathBuf> {
     PENDING.lock().ok()?.pop()
 }
 
 extern "C-unwind" fn on_open(event: *const AEDesc, _reply: *mut AEDesc, _refcon: isize) -> i16 {
-    // SAFETY: el sistema garantiza un evento válido durante la llamada.
+    // SAFETY: the system guarantees a valid event for the duration of the call.
     let paths = unsafe { paths_from_event(event) };
 
     if !paths.is_empty() {
@@ -161,11 +161,11 @@ extern "C-unwind" fn on_open(event: *const AEDesc, _reply: *mut AEDesc, _refcon:
     NO_ERR
 }
 
-/// Extrae las rutas de la lista de documentos del evento.
+/// Extracts the paths from the event's document list.
 ///
 /// # Safety
 ///
-/// `event` tiene que ser un Apple Event válido.
+/// `event` must be a valid Apple Event.
 unsafe fn paths_from_event(event: *const AEDesc) -> Vec<PathBuf> {
     let mut list = AEDesc::null();
     if unsafe { AEGetParamDesc(event, KEY_DIRECT_OBJECT, TYPE_AE_LIST, &mut list) } != NO_ERR {
@@ -188,11 +188,10 @@ unsafe fn paths_from_event(event: *const AEDesc) -> Vec<PathBuf> {
 
 /// # Safety
 ///
-/// `list` tiene que ser una lista de Apple Events válida e `index` estar en
-/// rango.
+/// `list` must be a valid Apple Event list and `index` must be in range.
 unsafe fn nth_path(list: *const AEDesc, index: isize) -> Option<PathBuf> {
-    // Las URLs de archivo son cortas; PATH_MAX de sobra alcanza incluso con el
-    // escapado porcentual.
+    // File URLs are short; PATH_MAX is more than enough even with percent
+    // escaping.
     let mut buffer = [0u8; 4096];
     let mut actual: isize = 0;
 
@@ -212,9 +211,8 @@ unsafe fn nth_path(list: *const AEDesc, index: isize) -> Option<PathBuf> {
         return None;
     }
 
-    // Llega una URL `file://` con escapado porcentual; CoreFoundation la
-    // convierte a una ruta del sistema de archivos sin que tengamos que
-    // desescaparla a mano.
+    // A percent-escaped `file://` URL arrives; CoreFoundation converts it to a
+    // filesystem path without us having to unescape it by hand.
     let length = actual.min(buffer.len() as isize);
     let url = unsafe {
         CFURL::with_bytes(
@@ -245,7 +243,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn los_codigos_de_cuatro_letras_coinciden_con_los_del_sistema() {
+    fn four_letter_codes_match_the_system_ones() {
         assert_eq!(K_CORE_EVENT_CLASS, 0x6165_7674); // 'aevt'
         assert_eq!(K_AE_OPEN_DOCUMENTS, 0x6F64_6F63); // 'odoc'
         assert_eq!(KEY_DIRECT_OBJECT, 0x2D2D_2D2D); // '----'
@@ -254,14 +252,14 @@ mod tests {
     }
 
     #[test]
-    fn instalar_el_handler_no_falla() {
+    fn installing_the_handler_does_not_fail() {
         install(None);
-        // Instalarlo dos veces tampoco: reemplaza al anterior.
+        // Neither does installing it twice: it replaces the previous one.
         install(None);
     }
 
     #[test]
-    fn sin_archivos_pendientes_no_devuelve_nada() {
+    fn no_pending_files_returns_nothing() {
         while take_pending().is_some() {}
         assert!(take_pending().is_none());
     }

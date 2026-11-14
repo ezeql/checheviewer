@@ -1,8 +1,8 @@
-//! Traza de diagnóstico opcional.
+//! Optional diagnostic trace.
 //!
-//! Cuando la app la abre el Finder no hay terminal a la vista y cuesta saber
-//! qué archivo recibió. Con `CHECHEVIEWER_DEBUG=1` escribe a stderr lo que va
-//! abriendo:
+//! When Finder launches the app there is no terminal in sight and it is hard
+//! to tell which file it received. With `CHECHEVIEWER_DEBUG=1` it writes what
+//! it is opening to stderr:
 //!
 //! ```sh
 //! open -a CheCheViewer.app foto.jpg --env CHECHEVIEWER_DEBUG=1 --stderr /tmp/cv.log
@@ -16,7 +16,7 @@ pub fn enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var_os("CHECHEVIEWER_DEBUG").is_some())
 }
 
-/// Escribe una línea de diagnóstico si está habilitado.
+/// Writes a diagnostic line if enabled.
 #[macro_export]
 macro_rules! trace {
     ($($arg:tt)*) => {

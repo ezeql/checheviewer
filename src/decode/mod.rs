@@ -6,52 +6,51 @@ use std::path::Path;
 
 use anyhow::Result;
 
-/// Límite por lado al subir una textura a la GPU. Una foto de 100 MP como
-/// textura RGBA son ~400 MB de VRAM; a 8192 px de lado el costo máximo queda
-/// en 256 MB y ninguna pantalla actual muestra más detalle que eso.
+/// Per-side limit when uploading a texture to the GPU. A 100 MP photo as an
+/// RGBA texture is ~400 MB of VRAM; at 8192 px per side the worst case is
+/// 256 MB, and no current display shows more detail than that.
 pub const MAX_TEXTURE_SIDE: u32 = 8192;
 
-/// Lado máximo de las miniaturas de la grilla.
+/// Maximum side length of the grid thumbnails.
 pub const THUMBNAIL_SIDE: u32 = 256;
 
-/// Formatos que el crate `image` no abre y ImageIO sí: los de Apple y los RAW
-/// de cámara. Van directo por la ruta nativa en lugar de fallar primero.
+/// Formats the `image` crate can't open but ImageIO can: Apple's and camera
+/// RAW. They go straight to the native path instead of failing first.
 const NATIVE_ONLY_EXTENSIONS: &[&str] =
     &["heic", "heif", "cr2", "cr3", "nef", "arw", "dng", "orf", "rw2", "raf", "srw"];
 
-/// Cómo obtener la imagen.
+/// How to obtain the image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Quality {
-    /// Para la grilla: se acepta la miniatura embebida del archivo, que es
-    /// órdenes de magnitud más rápida de leer.
+    /// For the grid: the thumbnail embedded in the file is accepted, which is
+    /// orders of magnitude faster to read.
     Thumbnail,
-    /// Para el visor: se decodifica la imagen real.
+    /// For the viewer: the real image is decoded.
     Full,
 }
 
-/// Imagen ya decodificada a RGBA8, lista para subir a la GPU.
+/// Image already decoded to RGBA8, ready to upload to the GPU.
 pub struct DecodedImage {
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>,
-    /// Dimensiones originales del archivo, antes de cualquier reducción. Es lo
-    /// que se le muestra al usuario.
+    /// Original dimensions of the file, before any downscaling. This is what
+    /// is shown to the user.
     pub original_width: u32,
     pub original_height: u32,
-    /// Si el color viene multiplicado por el alfa. ImageIO devuelve
-    /// premultiplicado; el crate `image`, no.
+    /// Whether the color is multiplied by alpha. ImageIO returns it
+    /// premultiplied; the `image` crate doesn't.
     pub premultiplied: bool,
 }
 
 impl DecodedImage {
-    /// Bytes que ocupa en memoria; el cache LRU se acota con esto.
+    /// Bytes it takes in memory; the LRU cache is bounded by this.
     pub fn byte_size(&self) -> usize {
         self.pixels.len()
     }
 }
 
-/// Decodifica una imagen a resolución completa, acotada por
-/// `MAX_TEXTURE_SIDE`.
+/// Decodes an image at full resolution, capped at `MAX_TEXTURE_SIDE`.
 pub fn decode_full(path: &Path) -> Result<DecodedImage> {
     if needs_native(path) {
         return native_decode(path, MAX_TEXTURE_SIDE, Quality::Full);
@@ -59,17 +58,17 @@ pub fn decode_full(path: &Path) -> Result<DecodedImage> {
 
     match rust_image::decode(path) {
         Ok(image) => Ok(image),
-        // ImageIO abre bastante más de lo que abre el crate `image`; si el
-        // camino de Rust puro falla, vale la pena intentar con el del sistema
-        // antes de darle un error al usuario.
+        // ImageIO opens quite a bit more than the `image` crate does; if the
+        // pure Rust path fails, it's worth trying the system one before
+        // giving the user an error.
         Err(err) => native_decode(path, MAX_TEXTURE_SIDE, Quality::Full).map_err(|_| err),
     }
 }
 
-/// Decodifica una miniatura para la grilla.
+/// Decodes a thumbnail for the grid.
 ///
-/// En macOS pasa por ImageIO, que devuelve la miniatura ya embebida en el
-/// archivo en vez de decodificar la foto entera.
+/// On macOS it goes through ImageIO, which returns the thumbnail already
+/// embedded in the file instead of decoding the whole photo.
 pub fn decode_thumbnail(path: &Path) -> Result<DecodedImage> {
     match native_decode(path, THUMBNAIL_SIDE, Quality::Thumbnail) {
         Ok(image) => Ok(image),
@@ -99,12 +98,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn los_formatos_de_apple_van_por_el_decodificador_nativo() {
-        assert!(needs_native(Path::new("foto.heic")));
-        assert!(needs_native(Path::new("foto.HEIC")));
-        assert!(needs_native(Path::new("captura.dng")));
-        assert!(!needs_native(Path::new("foto.jpg")));
-        assert!(!needs_native(Path::new("foto.png")));
-        assert!(!needs_native(Path::new("sin_extension")));
+    fn apple_formats_use_the_native_decoder() {
+        assert!(needs_native(Path::new("photo.heic")));
+        assert!(needs_native(Path::new("photo.HEIC")));
+        assert!(needs_native(Path::new("capture.dng")));
+        assert!(!needs_native(Path::new("photo.jpg")));
+        assert!(!needs_native(Path::new("photo.png")));
+        assert!(!needs_native(Path::new("no_extension")));
     }
 }

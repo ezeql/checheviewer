@@ -5,40 +5,40 @@ use anyhow::{Context, Result};
 use crate::model::{Entry, ViewMode};
 use crate::scan;
 
-/// El estado de navegación: qué carpeta está abierta, qué imágenes tiene y en
-/// cuál estamos parados.
+/// Navigation state: which folder is open, which images it has and which one
+/// we're on.
 ///
-/// No sabe nada de egui ni de texturas, así que se puede testear sin abrir una
-/// ventana. `App` le agrega encima la carga de imágenes y el dibujado.
+/// It knows nothing about egui or textures, so it can be tested without
+/// opening a window. `App` adds image loading and drawing on top of it.
 #[derive(Default)]
 pub struct Session {
     pub dir: Option<PathBuf>,
-    /// Fuente de verdad: las imágenes del directorio, ya ordenadas.
+    /// Source of truth: the directory's images, already sorted.
     pub entries: Vec<Entry>,
-    /// Índice de la imagen actual. Siempre válido mientras `entries` no esté
-    /// vacío.
+    /// Index of the current image. Always valid as long as `entries` is not
+    /// empty.
     index: usize,
     pub mode: ViewMode,
 }
 
 impl Session {
-    /// Abre un archivo o un directorio.
+    /// Opens a file or a directory.
     ///
-    /// Con un archivo: escanea el directorio que lo contiene, se posiciona en
-    /// él y entra al visor — es el caso de "abrir con" desde Finder.
-    /// Con un directorio: lo escanea y muestra la grilla.
+    /// With a file: scans the directory that contains it, positions on it and
+    /// enters the viewer — the "Open With" case from Finder.
+    /// With a directory: scans it and shows the grid.
     pub fn open_path(&mut self, path: &Path) -> Result<()> {
-        // Sin esto, `foto.jpg` tiene como padre `""` y `read_dir("")` falla.
-        // `absolute` no resuelve symlinks: un alias a una foto sigue abriendo
-        // la carpeta del alias, no la del original.
+        // Without this, `photo.jpg` has `""` as its parent and `read_dir("")`
+        // fails. `absolute` doesn't resolve symlinks: an alias to a photo still
+        // opens the alias's folder, not the original's.
         let path = &std::path::absolute(path)
-            .with_context(|| format!("ruta inválida: {}", path.display()))?;
+            .with_context(|| format!("invalid path: {}", path.display()))?;
         let (dir, target) = if path.is_dir() {
             (path.to_path_buf(), None)
         } else {
-            let parent = path
-                .parent()
-                .ok_or_else(|| anyhow::anyhow!("ruta sin directorio padre: {}", path.display()))?;
+            let parent = path.parent().ok_or_else(|| {
+                anyhow::anyhow!("path has no parent directory: {}", path.display())
+            })?;
             (parent.to_path_buf(), Some(path.to_path_buf()))
         };
 
@@ -75,11 +75,11 @@ impl Session {
         self.index + 1 >= self.entries.len()
     }
 
-    /// Mueve el índice `delta` posiciones, cortando en los extremos en lugar
-    /// de dar la vuelta: al llegar al final de la carpeta uno quiere saberlo,
-    /// no volver silenciosamente al principio.
+    /// Moves the index `delta` positions, stopping at the ends instead of
+    /// wrapping around: on reaching the end of the folder you want to know it,
+    /// not silently return to the start.
     ///
-    /// Devuelve `true` si el índice cambió.
+    /// Returns `true` if the index changed.
     pub fn step(&mut self, delta: isize) -> bool {
         if self.entries.is_empty() {
             return false;
@@ -89,7 +89,7 @@ impl Session {
         self.set_index(next)
     }
 
-    /// Salta a un índice concreto. Devuelve `true` si el índice cambió.
+    /// Jumps to a specific index. Returns `true` if the index changed.
     pub fn set_index(&mut self, index: usize) -> bool {
         if index >= self.entries.len() || index == self.index {
             return false;
@@ -111,7 +111,7 @@ impl Session {
 mod tests {
     use super::*;
 
-    /// Directorio temporal con imágenes vacías, borrado al terminar el test.
+    /// Temporary directory with empty images, deleted when the test ends.
     struct TempDir(PathBuf);
 
     impl TempDir {
@@ -137,10 +137,10 @@ mod tests {
     }
 
     #[test]
-    fn abrir_un_directorio_lista_solo_las_imagenes_y_muestra_la_grilla() {
+    fn opening_a_directory_lists_only_images_and_shows_the_grid() {
         let dir = TempDir::with_files(
-            "listado",
-            &["b.jpg", "a.png", "notas.txt", ".oculta.png", "sin_extension"],
+            "listing",
+            &["b.jpg", "a.png", "notes.txt", ".hidden.png", "no_extension"],
         );
         let mut session = Session::default();
         session.open_path(&dir.0).unwrap();
@@ -151,8 +151,8 @@ mod tests {
     }
 
     #[test]
-    fn abrir_un_archivo_se_posiciona_en_el_y_entra_al_visor() {
-        let dir = TempDir::with_files("posicion", &["a.png", "b.png", "c.png"]);
+    fn opening_a_file_positions_on_it_and_enters_the_viewer() {
+        let dir = TempDir::with_files("position", &["a.png", "b.png", "c.png"]);
         let mut session = Session::default();
         session.open_path(&dir.0.join("c.png")).unwrap();
 
@@ -162,8 +162,8 @@ mod tests {
     }
 
     #[test]
-    fn las_flechas_recorren_el_directorio_y_frenan_en_los_extremos() {
-        let dir = TempDir::with_files("navegacion", &["a.png", "b.png", "c.png"]);
+    fn arrows_walk_the_directory_and_stop_at_the_ends() {
+        let dir = TempDir::with_files("navigation", &["a.png", "b.png", "c.png"]);
         let mut session = Session::default();
         session.open_path(&dir.0).unwrap();
 
@@ -172,20 +172,20 @@ mod tests {
         assert!(session.step(1));
         assert_eq!(session.index(), 2);
 
-        // En el final no da la vuelta ni se pasa de rango.
-        assert!(!session.step(1), "no debería moverse más allá de la última");
+        // At the end it neither wraps around nor goes out of range.
+        assert!(!session.step(1), "should not move past the last");
         assert_eq!(session.index(), 2);
 
         assert!(session.step(-1));
         assert_eq!(session.index(), 1);
         session.step(-1);
-        assert!(!session.step(-1), "no debería moverse antes de la primera");
+        assert!(!session.step(-1), "should not move before the first");
         assert_eq!(session.index(), 0);
     }
 
     #[test]
-    fn home_y_end_van_a_los_extremos() {
-        let dir = TempDir::with_files("extremos", &["a.png", "b.png", "c.png"]);
+    fn home_and_end_go_to_the_ends() {
+        let dir = TempDir::with_files("ends", &["a.png", "b.png", "c.png"]);
         let mut session = Session::default();
         session.open_path(&dir.0).unwrap();
 
@@ -198,8 +198,8 @@ mod tests {
     }
 
     #[test]
-    fn una_carpeta_sin_imagenes_no_rompe_la_navegacion() {
-        let dir = TempDir::with_files("vacia", &["notas.txt"]);
+    fn a_folder_without_images_does_not_break_navigation() {
+        let dir = TempDir::with_files("empty", &["notes.txt"]);
         let mut session = Session::default();
         session.open_path(&dir.0).unwrap();
 
@@ -211,9 +211,9 @@ mod tests {
     }
 
     #[test]
-    fn abrir_otra_carpeta_reinicia_la_posicion() {
-        let first = TempDir::with_files("primera", &["a.png", "b.png", "c.png"]);
-        let second = TempDir::with_files("segunda", &["x.png"]);
+    fn opening_another_folder_resets_the_position() {
+        let first = TempDir::with_files("first", &["a.png", "b.png", "c.png"]);
+        let second = TempDir::with_files("second", &["x.png"]);
 
         let mut session = Session::default();
         session.open_path(&first.0).unwrap();
@@ -221,38 +221,38 @@ mod tests {
         assert_eq!(session.index(), 2);
 
         session.open_path(&second.0).unwrap();
-        assert_eq!(session.index(), 0, "el índice viejo no debe sobrevivir al cambio de carpeta");
+        assert_eq!(session.index(), 0, "the old index must not survive a folder change");
         assert_eq!(names(&session), ["x.png"]);
     }
 
-    /// `checheviewer foto.jpg` desde la terminal: la ruta no tiene carpeta y
-    /// su padre es `""`. `cargo test` corre con el directorio del crate como
-    /// directorio actual, así que el archivo se crea ahí y se borra al salir.
+    /// `checheviewer photo.jpg` from the terminal: the path has no folder and
+    /// its parent is `""`. `cargo test` runs with the crate directory as the
+    /// current directory, so the file is created there and deleted on exit.
     #[test]
-    fn una_ruta_relativa_sin_carpeta_abre_el_directorio_actual() {
-        struct Borrar(&'static str);
-        impl Drop for Borrar {
+    fn a_relative_path_without_folder_opens_the_current_directory() {
+        struct Remove(&'static str);
+        impl Drop for Remove {
             fn drop(&mut self) {
                 let _ = std::fs::remove_file(self.0);
             }
         }
-        let name = "checheviewer-test-ruta-relativa.png";
+        let name = "checheviewer-test-relative-path.png";
         std::fs::write(name, b"").unwrap();
-        let _borrar = Borrar(name);
+        let _remove = Remove(name);
 
         let mut session = Session::default();
-        session.open_path(Path::new(name)).expect("una ruta relativa debería abrirse");
+        session.open_path(Path::new(name)).expect("a relative path should open");
         assert_eq!(session.current().unwrap().file_name, name);
         assert_eq!(session.mode, ViewMode::Viewer);
     }
 
     #[test]
-    fn un_directorio_inexistente_da_error_sin_tocar_el_estado() {
-        let dir = TempDir::with_files("intacto", &["a.png"]);
+    fn a_missing_directory_errors_without_touching_the_state() {
+        let dir = TempDir::with_files("intact", &["a.png"]);
         let mut session = Session::default();
         session.open_path(&dir.0).unwrap();
 
-        assert!(session.open_path(Path::new("/no/existe/esta/carpeta")).is_err());
-        assert_eq!(names(&session), ["a.png"], "el estado previo debe seguir intacto");
+        assert!(session.open_path(Path::new("/does/not/exist/this/folder")).is_err());
+        assert_eq!(names(&session), ["a.png"], "the previous state must remain intact");
     }
 }

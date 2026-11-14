@@ -1,11 +1,11 @@
-//! Mide lo que la app tiene que hacer al abrir una carpeta grande.
+//! Measures what the app has to do when opening a large folder.
 //!
 //! ```sh
 //! cargo run --release --example bench -- ~/Pictures
 //! ```
 //!
-//! Sirve para comprobar dos cosas antes de culpar a la interfaz: cuánto tarda
-//! el escaneo del directorio y a qué ritmo salen las miniaturas.
+//! Use it to check two things before blaming the UI: how long the directory
+//! scan takes and how fast thumbnails come out.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -16,7 +16,7 @@ use checheviewer::scan;
 
 fn main() {
     let Some(dir) = std::env::args_os().nth(1).map(PathBuf::from) else {
-        eprintln!("uso: bench <carpeta>");
+        eprintln!("usage: bench <folder>");
         std::process::exit(2);
     };
 
@@ -28,13 +28,13 @@ fn main() {
             std::process::exit(1);
         }
     };
-    println!("escaneo: {} imágenes en {:?}", entries.len(), start.elapsed());
+    println!("scan: {} images in {:?}", entries.len(), start.elapsed());
 
     if entries.is_empty() {
         return;
     }
 
-    // Miniaturas: lo que hay que producir para llenar la grilla.
+    // Thumbnails: what has to be produced to fill the grid.
     let loader = Loader::new(|| {});
     let start = Instant::now();
     for entry in &entries {
@@ -60,22 +60,19 @@ fn main() {
 
     let elapsed = start.elapsed();
     println!(
-        "miniaturas: {ok} ok, {failed} con error en {elapsed:?} ({:.0}/s)",
+        "thumbnails: {ok} ok, {failed} failed in {elapsed:?} ({:.0}/s)",
         ok as f64 / elapsed.as_secs_f64()
     );
     if let Some(first) = first {
-        println!("primera miniatura a los {first:?}");
+        println!("first thumbnail after {first:?}");
     }
 
-    // Imagen completa: lo que se espera al entrar al visor.
+    // Full image: what you wait for when entering the viewer.
     let start = Instant::now();
     match decode::decode_full(&entries[0].path) {
-        Ok(image) => println!(
-            "primera imagen completa: {}×{} en {:?}",
-            image.width,
-            image.height,
-            start.elapsed()
-        ),
-        Err(err) => println!("primera imagen completa: error ({err:#})"),
+        Ok(image) => {
+            println!("first full image: {}×{} in {:?}", image.width, image.height, start.elapsed())
+        }
+        Err(err) => println!("first full image: error ({err:#})"),
     }
 }

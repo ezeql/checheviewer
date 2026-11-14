@@ -25,14 +25,14 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 
-	<!-- Tipos que la app declara poder abrir. Con rango "Alternate" aparece
-	     en "Abrir con" sin robarle el doble clic a Vista Previa; para que sea
-	     la app por omisión hay que elegirla a mano en el Finder. -->
+	<!-- Types the app declares it can open. With the "Alternate" rank it
+	     shows up in "Open With" without stealing double-click from Preview;
+	     to make it the default app, pick it by hand in Finder. -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>Imagen</string>
+			<string>Image</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -54,7 +54,7 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>Carpeta</string>
+			<string>Folder</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>

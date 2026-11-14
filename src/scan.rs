@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 
 use crate::model::Entry;
 
-/// Extensiones que sabemos abrir. Las de macOS (HEIC/RAW) se resuelven vía
-/// ImageIO; el resto vía el crate `image`. Ver `decode::decode_full`.
+/// Extensions we know how to open. The macOS ones (HEIC/RAW) are resolved via
+/// ImageIO; the rest via the `image` crate. See `decode::decode_full`.
 pub const SUPPORTED_EXTENSIONS: &[&str] = &[
     // crate `image`
     "png", "jpg", "jpeg", "jpe", "jfif", "gif", "webp", "tif", "tiff", "bmp", "ico", "avif", "pnm",
@@ -13,7 +13,7 @@ pub const SUPPORTED_EXTENSIONS: &[&str] = &[
     "heic", "heif", "cr2", "cr3", "nef", "arw", "dng", "orf", "rw2", "raf", "srw",
 ];
 
-/// ¿La ruta tiene una extensión que sabemos abrir?
+/// Does the path have an extension we know how to open?
 pub fn is_supported(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -24,15 +24,15 @@ pub fn is_supported(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Lista las imágenes de un directorio (no recursivo), ordenadas
-/// naturalmente: `img2.jpg` va antes que `img10.jpg`, como en Finder.
+/// Lists the images in a directory (non-recursive), naturally sorted:
+/// `img2.jpg` comes before `img10.jpg`, as in Finder.
 ///
-/// Ignora archivos ocultos, subdirectorios y todo lo que no tenga una
-/// extensión conocida. Las entradas ilegibles se saltean en silencio en lugar
-/// de abortar el escaneo entero.
+/// Ignores hidden files, subdirectories and anything without a known
+/// extension. Unreadable entries are silently skipped instead of aborting the
+/// whole scan.
 pub fn scan_dir(dir: &Path) -> Result<Vec<Entry>> {
     let read = std::fs::read_dir(dir)
-        .with_context(|| format!("no se pudo leer el directorio {}", dir.display()))?;
+        .with_context(|| format!("could not read directory {}", dir.display()))?;
 
     let mut entries: Vec<Entry> = read
         .filter_map(|e| e.ok())
@@ -49,9 +49,8 @@ fn is_hidden(path: &Path) -> bool {
     path.file_name().and_then(|n| n.to_str()).map(|n| n.starts_with('.')).unwrap_or(false)
 }
 
-/// Orden natural e insensible a mayúsculas, con el nombre completo como
-/// desempate para que el orden sea estable ante nombres que solo difieren en
-/// mayúsculas.
+/// Natural, case-insensitive order, with the full name as a tie-breaker so the
+/// order is stable for names that differ only in case.
 fn sort_natural(entries: &mut [Entry]) {
     entries.sort_by(|a, b| {
         natord::compare_ignore_case(&a.file_name, &b.file_name)
@@ -73,28 +72,28 @@ mod tests {
     }
 
     #[test]
-    fn ordena_numeros_naturalmente() {
+    fn sorts_numbers_naturally() {
         let mut e = entries_from(&["img10.jpg", "img2.jpg", "img1.jpg"]);
         sort_natural(&mut e);
         assert_eq!(names(&e), ["img1.jpg", "img2.jpg", "img10.jpg"]);
     }
 
     #[test]
-    fn ordena_ignorando_mayusculas() {
+    fn sorts_ignoring_case() {
         let mut e = entries_from(&["Zebra.png", "apple.png", "Banana.png"]);
         sort_natural(&mut e);
         assert_eq!(names(&e), ["apple.png", "Banana.png", "Zebra.png"]);
     }
 
     #[test]
-    fn el_orden_es_estable_con_nombres_que_solo_difieren_en_mayusculas() {
+    fn order_is_stable_for_names_differing_only_in_case() {
         let mut e = entries_from(&["FOO.png", "foo.png"]);
         sort_natural(&mut e);
         assert_eq!(names(&e), ["FOO.png", "foo.png"]);
     }
 
     #[test]
-    fn reconoce_extensiones_soportadas() {
+    fn recognizes_supported_extensions() {
         assert!(is_supported(Path::new("a.jpg")));
         assert!(is_supported(Path::new("a.JPEG")));
         assert!(is_supported(Path::new("a.HEIC")));
@@ -104,9 +103,9 @@ mod tests {
     }
 
     #[test]
-    fn detecta_archivos_ocultos() {
+    fn detects_hidden_files() {
         assert!(is_hidden(Path::new("/x/.DS_Store")));
-        assert!(is_hidden(Path::new("/x/._foto.jpg")));
-        assert!(!is_hidden(Path::new("/x/foto.jpg")));
+        assert!(is_hidden(Path::new("/x/._photo.jpg")));
+        assert!(!is_hidden(Path::new("/x/photo.jpg")));
     }
 }

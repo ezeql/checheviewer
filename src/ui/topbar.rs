@@ -1,12 +1,12 @@
 use crate::app::App;
 use crate::model::ViewMode;
 
-/// Barra superior: navegación, nombre del archivo, posición en la carpeta y
-/// estado del encuadre.
+/// Top bar: navigation, file name, position in the folder and framing
+/// state.
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     egui::Panel::top("topbar").show(ui, |ui| {
         ui.horizontal(|ui| {
-            if ui.button("Abrir…").on_hover_text("⌘O").clicked() {
+            if ui.button("Open…").on_hover_text("⌘O").clicked() {
                 app.pick_folder();
             }
 
@@ -34,7 +34,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     );
                 }
                 None => {
-                    ui.label(egui::RichText::new("Ninguna carpeta abierta").weak());
+                    ui.label(egui::RichText::new("No folder open").weak());
                 }
             }
 
@@ -49,8 +49,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let label = match app.session.mode {
-                    ViewMode::Grid => "Visor",
-                    ViewMode::Viewer => "Grilla",
+                    ViewMode::Grid => "Viewer",
+                    ViewMode::Viewer => "Grid",
                 };
                 if ui.button(label).clicked() {
                     app.session.mode = match app.session.mode {
@@ -67,11 +67,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     });
 }
 
-/// Controles de encuadre, solo en el visor.
+/// Framing controls, viewer only.
 fn show_view_controls(app: &mut App, ui: &mut egui::Ui) {
     ui.separator();
 
-    if ui.add_enabled(!app.view.is_fit(), egui::Button::new("Ajustar")).clicked() {
+    if ui.add_enabled(!app.view.is_fit(), egui::Button::new("Fit")).clicked() {
         app.view.fit();
     }
 
