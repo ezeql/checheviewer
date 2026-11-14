@@ -7,6 +7,8 @@ use checheviewer::app::App;
 use checheviewer::platform;
 
 fn main() -> eframe::Result<()> {
+    checheviewer::diag::install_crash_log();
+
     // Before opening the window: if the user launches the app by double-
     // clicking an image, the system sends the file as soon as it starts, so
     // we must already be listening.

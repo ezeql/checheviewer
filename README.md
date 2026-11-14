@@ -119,6 +119,11 @@ To debug opening from Finder, where there is no terminal in sight:
 open -a /Applications/CheCheViewer.app photo.jpg --env CHECHEVIEWER_DEBUG=1 --stderr /tmp/cv.log
 ```
 
+Crashes are appended to `~/Library/Logs/CheCheViewer/error.log`, which
+Console.app shows under *Log Reports*: Rust panics with their backtrace, and
+uncaught Objective-C exceptions such as the ones AppKit raises from its event
+loop.
+
 ## License
 
 [MIT](LICENSE)
