@@ -46,7 +46,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 ui.label(egui::RichText::new(format!("{w}×{h}")).weak());
             }
 
-            if let Some(err) = &app.open_error {
+            if let Some(err) = &app.action_error {
                 ui.colored_label(ui.visuals().error_fg_color, err);
             }
 
@@ -79,7 +79,7 @@ fn show_view_controls(app: &mut App, ui: &mut egui::Ui) {
     }
 
     if let Some(loaded) = app.current.clone() {
-        let percent = app.view.scale(loaded.size, app.viewport()) * 100.0;
+        let percent = app.view.scale(loaded.logical_size(), app.viewport()) * 100.0;
         ui.label(egui::RichText::new(format!("{percent:.0} %")).weak());
     }
 

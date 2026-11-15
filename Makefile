@@ -16,6 +16,11 @@ help: ## List the targets
 run: ## Run a debug build (ARGS=path to open)
 	cargo run -- $(ARGS)
 
+.PHONY: dev
+dev: ## Rebuild and restart on every save, with traces (ARGS=path to open)
+	@command -v watchexec >/dev/null || { echo "make dev needs watchexec: brew install watchexec"; exit 1; }
+	CHECHEVIEWER_DEBUG=1 RUST_BACKTRACE=1 watchexec --restart --clear --watch src --watch Cargo.toml --exts rs,toml -- cargo run -- $(ARGS)
+
 .PHONY: build
 build: ## Debug build
 	cargo build

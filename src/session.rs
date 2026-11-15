@@ -72,6 +72,16 @@ impl Session {
         Ok(())
     }
 
+    /// Drops the current image after its file was deleted. The index stays
+    /// put, so it lands on the next image, or on the previous one if it was
+    /// the last.
+    pub fn remove_current(&mut self) {
+        if self.index < self.entries.len() {
+            self.entries.remove(self.index);
+        }
+        self.index = self.index.min(self.entries.len().saturating_sub(1));
+    }
+
     /// Moves the selection in `folders`, stopping at the ends. Returns `true`
     /// if it changed.
     pub fn step_folder(&mut self, delta: isize) -> bool {
@@ -306,6 +316,23 @@ mod tests {
         session.open_path(&dir.0).unwrap();
 
         assert_eq!(session.folders[session.folder_index].file_name, "b");
+    }
+
+    #[test]
+    fn removing_the_current_image_moves_to_the_next_or_the_previous() {
+        let dir = TempDir::with_files("remove", &["a.png", "b.png", "c.png"]);
+        let mut session = Session::default();
+        session.open_path(&dir.0.join("b.png")).unwrap();
+
+        session.remove_current();
+        assert_eq!(names(&session), ["a.png", "c.png"]);
+        assert_eq!(session.current().unwrap().file_name, "c.png", "the next one");
+
+        session.remove_current();
+        assert_eq!(session.current().unwrap().file_name, "a.png", "it was the last: the previous");
+
+        session.remove_current();
+        assert!(session.is_empty() && session.current().is_none());
     }
 
     #[test]

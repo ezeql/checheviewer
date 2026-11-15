@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use egui::{ColorImage, Context, Rect, TextureHandle, TextureOptions};
+use egui::{Context, Rect, TextureHandle, TextureOptions};
 
 use crate::cache::{ByteCache, DEFAULT_BUDGET, THUMBNAIL_BUDGET};
 use crate::input::{self, Action};
@@ -32,6 +32,23 @@ pub struct LoadedImage {
     pub bytes: usize,
 }
 
+impl LoadedImage {
+    /// The size the viewer lays the image out at: the file's, whatever the
+    /// texture's resolution. The thumbnail shown while the full image loads
+    /// then lands exactly where the full image will, with no jump.
+    ///
+    /// Only the scale comes from the file's metadata; the shape is the
+    /// texture's, so metadata that disagrees with the pixels can't squash it.
+    pub fn logical_size(&self) -> egui::Vec2 {
+        let file_longest = self.original_size[0].max(self.original_size[1]) as f32;
+        let texture_longest = self.size.x.max(self.size.y);
+        if file_longest <= 0.0 || texture_longest <= 0.0 {
+            return self.size;
+        }
+        self.size * (file_longest / texture_longest)
+    }
+}
+
 pub struct App {
     /// Navigation: folder, image list and current index.
     pub session: Session,
@@ -39,9 +56,10 @@ pub struct App {
     pub current: Option<Arc<LoadedImage>>,
     /// Error for the current image, shown in its place.
     pub error: Option<String>,
-    /// Error opening a folder or file. Kept apart from `error` because that
-    /// one is recomputed every frame from the current image.
-    pub open_error: Option<String>,
+    /// Error from the last thing the user asked for: opening a folder or a
+    /// file, or deleting one. Kept apart from `error` because that one is
+    /// recomputed every frame from the current image.
+    pub action_error: Option<String>,
 
     /// Viewer framing: fit, zoom, pan and rotation.
     pub view: View,
@@ -60,13 +78,16 @@ pub struct App {
     thumbnails: ByteCache<Arc<LoadedImage>>,
     /// In-flight requests, to avoid queueing the same thing twice.
     pending: HashSet<(PathBuf, Kind)>,
-    /// Files that failed, to avoid retrying them every frame.
-    failed: HashMap<PathBuf, String>,
+    /// Loads that failed, to avoid retrying them every frame. Keyed by kind
+    /// too: a missing thumbnail must not stop the full image from loading.
+    failed: HashMap<(PathBuf, Kind), String>,
     /// Last index for which loads were scheduled.
     scheduled_for: Option<usize>,
     /// Which file is being shown, to reset the framing when it changes.
     shown_path: Option<PathBuf>,
     fullscreen: bool,
+    /// The welcome card, while it is up.
+    onboarding: Option<ui::onboarding::Onboarding>,
 }
 
 impl App {
@@ -87,7 +108,7 @@ impl App {
             session: Session::default(),
             current: None,
             error: None,
-            open_error: None,
+            action_error: None,
             view: View::default(),
             viewport: Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0)),
             grid_columns: 1,
@@ -100,6 +121,7 @@ impl App {
             scheduled_for: None,
             shown_path: None,
             fullscreen: false,
+            onboarding: ui::onboarding::Onboarding::at_launch(),
         };
         if let Some(path) = start {
             app.open_path(&path);
@@ -117,7 +139,7 @@ impl App {
                     self.session.index() + 1
                 );
                 self.error = None;
-                self.open_error = None;
+                self.action_error = None;
                 self.current = None;
                 self.failed.clear();
                 self.cache.clear();
@@ -128,7 +150,7 @@ impl App {
             }
             Err(err) => {
                 crate::trace!("could not open {}: {err:#}", path.display());
-                self.open_error = Some(format!("{err:#}"));
+                self.action_error = Some(format!("{err:#}"));
             }
         }
     }
@@ -180,6 +202,45 @@ impl App {
             Action::ZoomFit => self.view.fit(),
             Action::RotateLeft => self.view.rotate_left(),
             Action::RotateRight => self.view.rotate_right(),
+            Action::DeleteFile => self.delete_current(false),
+            Action::TrashFile => self.delete_current(true),
+        }
+    }
+
+    /// Deletes the current image, to the Trash right away or for good after
+    /// asking, and moves on to the next one.
+    fn delete_current(&mut self, to_trash: bool) {
+        let Some(entry) = self.session.current() else {
+            return;
+        };
+        let (path, name) = (entry.path.clone(), entry.file_name.clone());
+        if !to_trash && !confirm_delete(&name) {
+            return;
+        }
+        let result = if to_trash {
+            platform::move_to_trash(&path)
+        } else {
+            std::fs::remove_file(&path).map_err(anyhow::Error::from)
+        };
+        if let Err(err) = result {
+            self.action_error = Some(format!("could not delete {name}: {err:#}"));
+            return;
+        }
+        crate::trace!("deleted {} (to trash: {to_trash})", path.display());
+
+        self.action_error = None;
+        self.session.remove_current();
+        self.cache.remove(&path);
+        self.thumbnails.remove(&path);
+        self.failed.retain(|(failed, _), _| failed != &path);
+        // The index now points at another image: what was queued is stale.
+        self.scheduled_for = None;
+        self.scroll_to_selection = true;
+        // Nothing left: reopening the folder brings up the folder browser.
+        if self.session.is_empty() {
+            if let Some(dir) = self.session.dir.clone() {
+                self.open_path(&dir);
+            }
         }
     }
 
@@ -236,7 +297,7 @@ impl App {
     /// Size of the loaded image, or something reasonable if there is none
     /// yet.
     fn image_size(&self) -> egui::Vec2 {
-        self.current.as_ref().map(|img| img.size).unwrap_or(egui::vec2(1.0, 1.0))
+        self.current.as_ref().map(|img| img.logical_size()).unwrap_or(egui::vec2(1.0, 1.0))
     }
 
     /// Collects what the workers finished and uploads it to the GPU.
@@ -247,32 +308,19 @@ impl App {
         for result in self.loader.poll().collect::<Vec<_>>() {
             self.pending.remove(&(result.path.clone(), result.kind));
             match result.outcome {
-                Outcome::Image(image) => {
+                Outcome::Image { color, original_size } => {
                     let name = format!("{}#{:?}", result.path.display(), result.kind);
-                    let size = [image.width as usize, image.height as usize];
-                    // ImageIO returns color already multiplied by alpha; the
-                    // `image` crate doesn't. Mixing them up tints
-                    // semi-transparent areas black.
-                    let color = if image.premultiplied {
-                        ColorImage::from_rgba_premultiplied(size, &image.pixels)
-                    } else {
-                        ColorImage::from_rgba_unmultiplied(size, &image.pixels)
-                    };
-                    let bytes = image.byte_size();
+                    let size = egui::vec2(color.size[0] as f32, color.size[1] as f32);
+                    let bytes = color.pixels.len() * 4;
                     let texture = ctx.load_texture(name, color, TextureOptions::LINEAR);
-                    let loaded = Arc::new(LoadedImage {
-                        texture,
-                        size: egui::vec2(image.width as f32, image.height as f32),
-                        original_size: [image.original_width, image.original_height],
-                        bytes,
-                    });
+                    let loaded = Arc::new(LoadedImage { texture, size, original_size, bytes });
                     match result.kind {
                         Kind::Full => self.cache.insert(result.path, loaded, bytes),
                         Kind::Thumbnail => self.thumbnails.insert(result.path, loaded, bytes),
                     }
                 }
                 Outcome::Error(err) => {
-                    self.failed.insert(result.path, err);
+                    self.failed.insert((result.path, result.kind), err);
                 }
                 // Became stale: if still needed, it is requested again next
                 // frame.
@@ -295,9 +343,28 @@ impl App {
         }
 
         // Requested every frame even if nothing changed: a request that comes
-        // back `Cancelled` leaves `pending` and must be requeued. `request`
-        // already skips what is cached or in flight, so repeating is free.
+        // back `Cancelled` leaves `pending` and must be requeued. The request
+        // functions skip what is cached or in flight, so repeating is free.
+        if self.session.mode == ViewMode::Grid {
+            // The grid only needs thumbnails. The selected image still decodes
+            // in the background so Enter is instant, but only once no
+            // thumbnail is waiting, and without neighbors: holding an arrow in
+            // the grid used to keep every worker busy with full-size decodes.
+            if !self.pending.iter().any(|(_, kind)| *kind == Kind::Thumbnail) {
+                self.request(index, Priority::Prefetch);
+            }
+            return;
+        }
+
+        // Visible requests are served newest first, so the thumbnail, asked
+        // last, is decoded first: ~13 ms against 60-90 ms for the full image,
+        // which it stands in for until it arrives.
         self.request(index, Priority::Visible);
+        if let Some(path) = self.session.current().map(|e| e.path.clone()) {
+            if !self.cache.contains(&path) {
+                self.request_thumbnail(&path, Priority::Visible);
+            }
+        }
         for offset in 1..=PREFETCH_AHEAD {
             self.request(index + offset, Priority::Prefetch);
         }
@@ -311,7 +378,7 @@ impl App {
             return;
         };
         let path = entry.path.clone();
-        if self.cache.contains(&path) || self.failed.contains_key(&path) {
+        if self.cache.contains(&path) || self.failed.contains_key(&(path.clone(), Kind::Full)) {
             return;
         }
         if !self.pending.insert((path.clone(), Kind::Full)) {
@@ -328,18 +395,23 @@ impl App {
         if let Some(thumb) = self.thumbnails.get(path) {
             return Some(Arc::clone(thumb));
         }
-        if self.failed.contains_key(path) {
-            return None;
-        }
-        if self.pending.insert((path.to_path_buf(), Kind::Thumbnail)) {
-            self.loader.request(path, Kind::Thumbnail, Priority::Prefetch);
-        }
+        self.request_thumbnail(path, Priority::Prefetch);
         None
     }
 
-    /// Did loading this file fail?
+    fn request_thumbnail(&mut self, path: &Path, priority: Priority) {
+        let key = (path.to_path_buf(), Kind::Thumbnail);
+        if self.thumbnails.contains(path) || self.failed.contains_key(&key) {
+            return;
+        }
+        if self.pending.insert(key) {
+            self.loader.request(path, Kind::Thumbnail, priority);
+        }
+    }
+
+    /// Did this file's thumbnail fail to load?
     pub fn has_failed(&self, path: &Path) -> bool {
-        self.failed.contains_key(path)
+        self.failed.contains_key(&(path.to_path_buf(), Kind::Thumbnail))
     }
 
     /// Leaves in `current` / `error` what should be drawn this frame.
@@ -356,13 +428,15 @@ impl App {
         if self.shown_path.as_ref() != Some(&path) {
             self.shown_path = Some(path.clone());
             self.view.reset();
+            self.action_error = None;
         }
 
-        self.error = self.failed.get(&path).cloned();
+        self.error = self.failed.get(&(path.clone(), Kind::Full)).cloned();
         // `get` also marks the entry as most recently used, which is exactly
         // what we want: the visible image should never be the first eviction
-        // candidate.
-        self.current = self.cache.get(&path).cloned();
+        // candidate. Until the full image is in, its thumbnail stands in.
+        self.current =
+            self.cache.get(&path).cloned().or_else(|| self.thumbnails.get(&path).cloned());
     }
 
     /// Records the area where the image is drawn, so keyboard zoom knows
@@ -393,9 +467,11 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
 
         // Input is consumed before drawing, so widgets don't swallow the
-        // arrow keys.
-        for action in ctx.input_mut(|i| input::poll(i, self.session.mode)) {
-            self.apply(action, &ctx);
+        // arrow keys. While the welcome card is up, it gets them instead.
+        if self.onboarding.is_none() {
+            for action in ctx.input_mut(|i| input::poll(i, self.session.mode)) {
+                self.apply(action, &ctx);
+            }
         }
 
         // Double-click on an image from Finder, or "Open With".
@@ -418,5 +494,26 @@ impl eframe::App for App {
             ViewMode::Grid => ui::grid::show(self, ui),
             ViewMode::Viewer => ui::viewer::show(self, ui),
         }
+
+        if let Some(onboarding) = &mut self.onboarding {
+            if !ui::onboarding::show(onboarding, &ctx) {
+                self.onboarding = None;
+            }
+        }
     }
+}
+
+/// The native "are you sure?" before a deletion that can't be undone. Modal,
+/// like the ⌘O dialog.
+fn confirm_delete(name: &str) -> bool {
+    let delete = "Delete";
+    let answer = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Warning)
+        .set_title("Delete image")
+        .set_description(format!(
+            "Delete “{name}” for good? This can't be undone.\n\nDelete without ⌘ moves it to the Trash instead."
+        ))
+        .set_buttons(rfd::MessageButtons::OkCancelCustom(delete.into(), "Cancel".into()))
+        .show();
+    answer == rfd::MessageDialogResult::Custom(delete.into())
 }

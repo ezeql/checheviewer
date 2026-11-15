@@ -45,7 +45,7 @@ fn main() {
     while ok + failed < entries.len() {
         for result in loader.poll() {
             match result.outcome {
-                Outcome::Image(_) => {
+                Outcome::Image { .. } => {
                     ok += 1;
                     if first.is_none() {
                         first = Some(start.elapsed());

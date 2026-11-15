@@ -70,6 +70,13 @@ impl<V> ByteCache<V> {
         self.entries.is_empty()
     }
 
+    /// Drops an entry, e.g. for a file that was just deleted.
+    pub fn remove(&mut self, path: &Path) {
+        if let Some((_, size)) = self.entries.pop(path) {
+            self.bytes -= size;
+        }
+    }
+
     pub fn clear(&mut self) {
         self.entries.clear();
         self.bytes = 0;
@@ -147,6 +154,18 @@ mod tests {
             assert!(cache.bytes() <= 1_000, "cache went over budget at iteration {i}");
         }
         assert_eq!(cache.len(), 10);
+    }
+
+    #[test]
+    fn remove_frees_its_bytes() {
+        let mut cache: ByteCache<u32> = ByteCache::new(1_000);
+        cache.insert(path("a"), 1, 100);
+        cache.insert(path("b"), 2, 30);
+        cache.remove(&path("a"));
+        cache.remove(&path("missing"));
+
+        assert!(!cache.contains(&path("a")));
+        assert_eq!(cache.bytes(), 30);
     }
 
     #[test]

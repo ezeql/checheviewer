@@ -43,6 +43,9 @@ CheCheViewer → *Change All*.
 
 ## Usage
 
+The first time it opens, a short welcome card lists the essential shortcuts;
+tick *Skip this next time* to stop seeing it.
+
 ```sh
 checheviewer                # start at your home folder
 checheviewer ~/Pictures     # open a folder in the grid
@@ -61,7 +64,7 @@ Double-click works too.
 |---|---|
 | ← → | previous / next image |
 | ↑ ↓ | previous / next row in the grid |
-| Space / Backspace | next / previous in the viewer |
+| Space | next in the viewer |
 | Home / End | first / last |
 | Enter | open the selected image |
 | Esc | back to the grid |
@@ -70,6 +73,8 @@ Double-click works too.
 | 0 | zoom 100 % |
 | ⌘0 | fit to window |
 | L R | rotate left / right (view only) |
+| Delete | move the image to the Trash |
+| ⌘Delete | delete the image for good (asks first) |
 | ⌘O | open folder |
 | ⌘Q | quit |
 
@@ -90,6 +95,7 @@ EXIF orientation is always applied: portrait phone photos show up upright.
 ```sh
 make run                    # debug build, start at home
 make run ARGS=~/Pictures    # debug build, open a folder
+make dev ARGS=~/Pictures    # rebuild and restart on every save, with traces
 make check                  # format, clippy and tests
 cargo run --release --example bench -- ~/Pictures   # time scanning and thumbnails
 ```
@@ -115,7 +121,8 @@ Three decisions hold up the rest:
    queued; without that, holding → down queues hundreds of decodes that end
    up blocking the one you are waiting for.
 3. **Thumbnails come from ImageIO**, which uses the thumbnail already embedded
-   in the file instead of decoding the whole photo.
+   in the file instead of decoding the whole photo. The viewer shows it while
+   the full image decodes: ~13 ms to first pixels instead of 60-90 ms.
 
 To debug opening from Finder, where there is no terminal in sight:
 

@@ -48,8 +48,15 @@ pub fn decode(path: &Path, max_side: u32, quality: Quality) -> Result<DecodedIma
     let image = unsafe { source.thumbnail_at_index(0, Some(options.as_opaque())) }
         .ok_or_else(|| anyhow!("ImageIO could not decode {}", path.display()))?;
 
-    let (pixels, width, height) =
+    let (mut pixels, mut width, mut height) =
         to_rgba(&image).with_context(|| format!("could not convert to RGBA {}", path.display()))?;
+
+    // Many cameras embed a 160×120 (4:3) thumbnail with black bars for a 3:2
+    // photo: half the photos in a real test folder. Dropping the bars keeps it
+    // from showing up squashed or letterboxed.
+    if let (Quality::Thumbnail, Some(w), Some(h)) = (quality, original_width, original_height) {
+        (pixels, width, height) = strip_black_bars(pixels, width, height, w as f64 / h as f64);
+    }
 
     Ok(DecodedImage {
         width,
@@ -61,6 +68,47 @@ pub fn decode(path: &Path, max_side: u32, quality: Quality) -> Result<DecodedIma
         original_height: original_height.unwrap_or(height),
         premultiplied: true,
     })
+}
+
+/// Crops an RGBA thumbnail around its center to `aspect` (width / height),
+/// but only when it is off by more than 2 % and the bands to drop are black:
+/// a letterbox. Anything else is returned untouched, so metadata that
+/// disagrees with the pixels can never cut real content.
+fn strip_black_bars(pixels: Vec<u8>, w: u32, h: u32, aspect: f64) -> (Vec<u8>, u32, u32) {
+    let (wf, hf) = (w as f64, h as f64);
+    if w == 0 || h == 0 || ((wf / hf) / aspect - 1.0).abs() <= 0.02 {
+        return (pixels, w, h);
+    }
+    let (cw, ch) = if wf / hf > aspect {
+        (((hf * aspect).round() as u32).min(w), h)
+    } else {
+        (w, ((wf / aspect).round() as u32).min(h))
+    };
+    let (x, y) = ((w - cw) / 2, (h - ch) / 2);
+
+    // Mean brightness of what would be cut: JPEG ringing lifts the rows next
+    // to the photo a little, so this is an average, not a per-pixel test.
+    let (mut sum, mut count) = (0u64, 0u64);
+    for py in 0..h {
+        for px in 0..w {
+            if (x..x + cw).contains(&px) && (y..y + ch).contains(&py) {
+                continue;
+            }
+            let i = ((py * w + px) * 4) as usize;
+            sum += pixels[i..i + 3].iter().map(|&c| c as u64).sum::<u64>();
+            count += 3;
+        }
+    }
+    if count == 0 || sum / count > 16 {
+        return (pixels, w, h);
+    }
+
+    let mut cropped = Vec::with_capacity((cw * ch * 4) as usize);
+    for row in y..y + ch {
+        let start = ((row * w + x) * 4) as usize;
+        cropped.extend_from_slice(&pixels[start..start + (cw * 4) as usize]);
+    }
+    (cropped, cw, ch)
 }
 
 /// CFURL built from a filesystem path.
@@ -236,6 +284,29 @@ mod tests {
         let result = decode(&path, 256, Quality::Full);
         let _ = std::fs::remove_file(&path);
         assert!(result.is_err(), "a garbage file should not decode");
+    }
+
+    /// A 6×6 image whose top and bottom rows are bars, for a 3:2 photo.
+    fn letterboxed(bar: u8) -> Vec<u8> {
+        (0..6)
+            .flat_map(|row| {
+                let v = if row == 0 || row == 5 { bar } else { 150 };
+                [v, v, v, 255].repeat(6)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn black_bars_are_cropped_away() {
+        let (pixels, w, h) = strip_black_bars(letterboxed(0), 6, 6, 1.5);
+        assert_eq!((w, h), (6, 4));
+        assert!(pixels.chunks(4).all(|p| p[0] == 150), "only the photo is left");
+    }
+
+    #[test]
+    fn bands_with_content_are_never_cropped() {
+        let (_, w, h) = strip_black_bars(letterboxed(90), 6, 6, 1.5);
+        assert_eq!((w, h), (6, 6), "the shape mismatch alone is not enough");
     }
 
     #[test]

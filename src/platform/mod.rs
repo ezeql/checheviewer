@@ -22,6 +22,20 @@ pub fn set_repaint_context(_ctx: &egui::Context) {
     macos_open::set_repaint_context(_ctx.clone());
 }
 
+/// Moves a file to the Trash, where Finder's "Put Back" can restore it.
+pub fn move_to_trash(path: &std::path::Path) -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::{NSFileManager, NSString, NSURL};
+        let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
+        NSFileManager::defaultManager()
+            .trashItemAtURL_resultingItemURL_error(&url, None)
+            .map_err(|err| anyhow::anyhow!("{}", err.localizedDescription()))
+    }
+    #[cfg(not(target_os = "macos"))]
+    anyhow::bail!("moving {} to the Trash is only supported on macOS", path.display())
+}
+
 /// Returns a file the system has asked to open since the last call.
 pub fn take_requested_path() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "macos")]

@@ -44,9 +44,26 @@ pub struct DecodedImage {
 }
 
 impl DecodedImage {
-    /// Bytes it takes in memory; the LRU cache is bounded by this.
-    pub fn byte_size(&self) -> usize {
-        self.pixels.len()
+    /// Converts to egui's pixel format. Runs on the decode worker: doing it on
+    /// the UI thread cost 8-12 ms per 12 MP photo, most of a frame.
+    ///
+    /// Works in place and hands the buffer over without copying: with several
+    /// workers converting at once, a second full-size buffer each pushed the
+    /// memory peak up by ~120 MB. ImageIO's output is already premultiplied;
+    /// the `image` crate's straight alpha is premultiplied here, since mixing
+    /// the two up tints translucent areas black.
+    pub fn into_color_image(mut self) -> egui::ColorImage {
+        let size = [self.width as usize, self.height as usize];
+        if !self.premultiplied {
+            for p in self.pixels.as_chunks_mut::<4>().0 {
+                *p = egui::Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3]).to_array();
+            }
+        }
+        match bytemuck::allocation::try_cast_vec(self.pixels) {
+            Ok(pixels) => egui::ColorImage::new(size, pixels),
+            // A capacity that isn't a whole number of pixels: copy instead.
+            Err((_, pixels)) => egui::ColorImage::from_rgba_premultiplied(size, &pixels),
+        }
     }
 }
 
@@ -96,6 +113,25 @@ fn native_decode(path: &Path, max_side: u32, _quality: Quality) -> Result<Decode
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pixel(premultiplied: bool, rgba: [u8; 4]) -> [u8; 4] {
+        let image = DecodedImage {
+            width: 1,
+            height: 1,
+            pixels: rgba.to_vec(),
+            original_width: 1,
+            original_height: 1,
+            premultiplied,
+        };
+        image.into_color_image().pixels[0].to_array()
+    }
+
+    #[test]
+    fn premultiplied_pixels_pass_through_and_straight_alpha_is_premultiplied() {
+        assert_eq!(pixel(true, [10, 20, 30, 128]), [10, 20, 30, 128]);
+        let [r, _, _, a] = pixel(false, [200, 200, 200, 128]);
+        assert!(r < 200 && a == 128, "straight alpha must be premultiplied, got {r}");
+    }
 
     #[test]
     fn apple_formats_use_the_native_decoder() {

@@ -33,12 +33,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             return;
         };
 
-        handle_pointer(app, ui, &response, loaded.size, available);
+        let size = loaded.logical_size();
+        handle_pointer(app, ui, &response, size, available);
 
-        let rect = app.view.image_rect(loaded.size, available);
+        let rect = app.view.image_rect(size, available);
         draw_image(ui, loaded.texture.id(), rect, app.view.rotation);
 
-        if app.view.can_pan(loaded.size, available) {
+        // What's on screen may be the thumbnail standing in: say it's not the
+        // final image yet.
+        if app.is_loading() {
+            let corner = available.right_top() + egui::vec2(-28.0, 8.0);
+            ui.put(Rect::from_min_size(corner, Vec2::splat(20.0)), egui::Spinner::new());
+        }
+
+        if app.view.can_pan(size, available) {
             ui.ctx().set_cursor_icon(if response.dragged() {
                 egui::CursorIcon::Grabbing
             } else {

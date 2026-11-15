@@ -6,7 +6,7 @@ use std::thread::JoinHandle;
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
-use crate::decode::{self, DecodedImage};
+use crate::decode;
 
 /// How many images to decode in parallel. More than four speeds up nothing
 /// noticeable and multiplies peak memory (each worker may hold a whole image
@@ -31,7 +31,11 @@ pub enum Kind {
 }
 
 pub enum Outcome {
-    Image(Box<DecodedImage>),
+    /// Already in egui's format, so the UI thread only has to upload it.
+    Image {
+        color: egui::ColorImage,
+        original_size: [u32; 2],
+    },
     Error(String),
     /// The request became stale before decoding started.
     ///
@@ -158,7 +162,10 @@ impl Loader {
         {
             let mut queue = self.shared.queue.lock().expect("decoding queue poisoned");
             match priority {
-                Priority::Visible => queue.visible.push_back(job),
+                // Newest first: after scrubbing through a folder, what was
+                // asked for the image you stopped on goes ahead of the
+                // thumbnails of everything you passed, which nothing cancels.
+                Priority::Visible => queue.visible.push_front(job),
                 Priority::Prefetch => queue.prefetch.push_back(job),
             }
         }
@@ -212,7 +219,10 @@ fn worker(shared: &Shared, tx: &Sender<LoadResult>, wake: &(dyn Fn() + Send + Sy
                 Kind::Thumbnail => decode::decode_thumbnail(&job.path),
             };
             match decoded {
-                Ok(image) => Outcome::Image(Box::new(image)),
+                Ok(image) => Outcome::Image {
+                    original_size: [image.original_width, image.original_height],
+                    color: image.into_color_image(),
+                },
                 Err(err) => Outcome::Error(format!("{err:#}")),
             }
         };
@@ -281,7 +291,7 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].path, path);
         assert_eq!(results[0].kind, Kind::Full);
-        assert!(matches!(results[0].outcome, Outcome::Image(_)));
+        assert!(matches!(results[0].outcome, Outcome::Image { .. }));
         assert!(wakes.load(Ordering::SeqCst) >= 1, "should have woken the UI");
     }
 
@@ -300,7 +310,7 @@ mod tests {
         let results = collect_results(&loader, 1, Duration::from_secs(5));
         assert_eq!(results.len(), 1);
         assert!(
-            matches!(results[0].outcome, Outcome::Image(_)),
+            matches!(results[0].outcome, Outcome::Image { .. }),
             "the thumbnail should not be cancelled by changing image"
         );
     }
@@ -335,7 +345,7 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert!(results.iter().any(|r| matches!(r.outcome, Outcome::Error(_))));
         assert!(
-            results.iter().any(|r| matches!(r.outcome, Outcome::Image(_))),
+            results.iter().any(|r| matches!(r.outcome, Outcome::Image { .. })),
             "the worker must stay alive after a broken file"
         );
     }
