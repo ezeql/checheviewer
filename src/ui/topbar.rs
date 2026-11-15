@@ -33,6 +33,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         .weak(),
                     );
                 }
+                None if app.session.dir.is_some() => {
+                    ui.label(egui::RichText::new("No images").weak());
+                }
                 None => {
                     ui.label(egui::RichText::new("No folder open").weak());
                 }

@@ -14,7 +14,9 @@ fn main() -> eframe::Result<()> {
     // we must already be listening.
     platform::install_open_handler();
 
-    let start = std::env::args_os().nth(1).map(PathBuf::from);
+    // With nothing to open, start at home: if it has no images, the folder
+    // browser takes it from there.
+    let start = std::env::args_os().nth(1).or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
     checheviewer::trace!("starting; argument: {start:?}");
 
     let options = eframe::NativeOptions {

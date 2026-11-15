@@ -131,6 +131,9 @@ impl App {
     }
 
     fn apply(&mut self, action: Action, ctx: &Context) {
+        if self.session.is_empty() && self.session.mode == ViewMode::Grid && self.browse(action) {
+            return;
+        }
         match action {
             Action::NextImage => {
                 self.move_by(1);
@@ -175,6 +178,35 @@ impl App {
             Action::RotateLeft => self.view.rotate_left(),
             Action::RotateRight => self.view.rotate_right(),
         }
+    }
+
+    /// Keys for the folder browser the grid shows when there are no images:
+    /// ↑ ↓ pick, Enter or → opens, ← goes up. Returns whether it used the
+    /// action.
+    fn browse(&mut self, action: Action) -> bool {
+        let delta = match action {
+            Action::MoveUp => -1,
+            Action::MoveDown => 1,
+            Action::FirstImage => isize::MIN,
+            Action::LastImage => isize::MAX,
+            Action::EnterViewer | Action::NextImage => {
+                let selected = self.session.folders.get(self.session.folder_index);
+                if let Some(path) = selected.map(|f| f.path.clone()) {
+                    self.open_path(&path);
+                }
+                return true;
+            }
+            Action::PrevImage => {
+                let parent = self.session.dir.as_ref().and_then(|d| d.parent());
+                if let Some(path) = parent.map(Path::to_path_buf) {
+                    self.open_path(&path);
+                }
+                return true;
+            }
+            _ => return false,
+        };
+        self.scroll_to_selection |= self.session.step_folder(delta);
+        true
     }
 
     /// Opens the native dialog to pick a folder.

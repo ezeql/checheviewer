@@ -44,12 +44,16 @@ CheCheViewer → *Change All*.
 ## Usage
 
 ```sh
-checheviewer                # empty window
+checheviewer                # start at your home folder
 checheviewer ~/Pictures     # open a folder in the grid
 checheviewer photo.jpg      # open an image in the viewer, inside its folder
 ```
 
 You can also drag a folder or an image onto the window.
+
+When a folder has no images, the grid lists its subfolders instead, with
+`..` to go up: ↑ ↓ pick one, Enter or → opens it, ← goes to the parent.
+Double-click works too.
 
 ## Shortcuts
 
@@ -84,7 +88,7 @@ EXIF orientation is always applied: portrait phone photos show up upright.
 ## Development
 
 ```sh
-make run                    # debug build, empty window
+make run                    # debug build, start at home
 make run ARGS=~/Pictures    # debug build, open a folder
 make check                  # format, clippy and tests
 cargo run --release --example bench -- ~/Pictures   # time scanning and thumbnails

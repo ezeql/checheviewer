@@ -19,9 +19,7 @@ const CELL: Vec2 = Vec2::new(THUMB_SIDE, THUMB_SIDE + LABEL_HEIGHT);
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     egui::CentralPanel::default().show(ui, |ui| {
         if app.session.is_empty() {
-            ui.centered_and_justified(|ui| {
-                ui.label("Drop a folder here to start");
-            });
+            folder_browser(app, ui);
             return;
         }
 
@@ -82,6 +80,48 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 enum Interaction {
     Clicked,
     Opened,
+}
+
+/// What the grid shows when the folder has no images: where to go next.
+/// Click selects and double-click opens, as in the grid.
+fn folder_browser(app: &mut App, ui: &mut egui::Ui) {
+    let Some(dir) = &app.session.dir else {
+        ui.centered_and_justified(|ui| {
+            ui.label("Drop a folder here to start");
+        });
+        return;
+    };
+    ui.label(egui::RichText::new(dir.display().to_string()).strong());
+    ui.label(
+        egui::RichText::new("No images here. ↑ ↓ to pick a folder, Enter to open it, ← to go up.")
+            .weak(),
+    );
+    ui.separator();
+
+    let scroll_to_selection = std::mem::take(&mut app.scroll_to_selection);
+    let (mut clicked, mut opened) = (None, None);
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        for (index, folder) in app.session.folders.iter().enumerate() {
+            let selected = index == app.session.folder_index;
+            let icon = if folder.file_name == ".." { "⬆" } else { "🗀" };
+            let response = ui.selectable_label(selected, format!("{icon} {}", folder.file_name));
+            if selected && scroll_to_selection {
+                response.scroll_to_me(None);
+            }
+            if response.double_clicked() {
+                opened = Some(folder.path.clone());
+            } else if response.clicked() {
+                clicked = Some(index);
+            }
+        }
+    });
+
+    if let Some(index) = clicked {
+        app.session.folder_index = index;
+    }
+    if let Some(path) = opened {
+        app.open_path(&path);
+    }
 }
 
 /// Draws a cell and returns what the user did with it.

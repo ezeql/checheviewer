@@ -19,6 +19,11 @@ pub struct Session {
     /// empty.
     index: usize,
     pub mode: ViewMode,
+    /// Where to go when the folder has no images: the parent, named "..", and
+    /// then the subfolders. Empty when there are images.
+    pub folders: Vec<Entry>,
+    /// Selected row in `folders`.
+    pub folder_index: usize,
 }
 
 impl Session {
@@ -45,10 +50,36 @@ impl Session {
         let entries = scan::scan_dir(&dir)?;
         self.index =
             target.as_ref().and_then(|t| entries.iter().position(|e| &e.path == t)).unwrap_or(0);
-        self.mode = if target.is_some() { ViewMode::Viewer } else { ViewMode::Grid };
+        // With nothing to show, the grid is where the folder browser lives.
+        self.mode =
+            if target.is_some() && !entries.is_empty() { ViewMode::Viewer } else { ViewMode::Grid };
+
+        self.folders = Vec::new();
+        if entries.is_empty() {
+            if let Some(parent) = dir.parent() {
+                self.folders.push(Entry { path: parent.to_path_buf(), file_name: "..".into() });
+            }
+            self.folders.extend(scan::scan_subdirs(&dir).unwrap_or_default());
+        }
+        // Going up selects the folder we came from, as file managers do, so
+        // going back down is a single Enter.
+        let came_from = self.dir.take();
+        self.folder_index =
+            self.folders.iter().position(|f| Some(&f.path) == came_from.as_ref()).unwrap_or(0);
+
         self.entries = entries;
         self.dir = Some(dir);
         Ok(())
+    }
+
+    /// Moves the selection in `folders`, stopping at the ends. Returns `true`
+    /// if it changed.
+    pub fn step_folder(&mut self, delta: isize) -> bool {
+        let last = self.folders.len().saturating_sub(1) as isize;
+        let next = (self.folder_index as isize).saturating_add(delta).clamp(0, last) as usize;
+        let changed = next != self.folder_index;
+        self.folder_index = next;
+        changed
     }
 
     pub fn index(&self) -> usize {
@@ -244,6 +275,53 @@ mod tests {
         session.open_path(Path::new(name)).expect("a relative path should open");
         assert_eq!(session.current().unwrap().file_name, name);
         assert_eq!(session.mode, ViewMode::Viewer);
+    }
+
+    #[test]
+    fn a_folder_without_images_lists_the_parent_and_its_subfolders() {
+        let dir = TempDir::with_files("browser", &["notes.txt"]);
+        for sub in ["b10", "b2", ".hidden"] {
+            std::fs::create_dir(dir.0.join(sub)).unwrap();
+        }
+        let mut session = Session::default();
+        session.open_path(&dir.0.join("notes.txt")).unwrap();
+
+        let folders: Vec<_> = session.folders.iter().map(|f| f.file_name.as_str()).collect();
+        assert_eq!(folders, ["..", "b2", "b10"]);
+        assert_eq!(session.mode, ViewMode::Grid, "the browser lives in the grid");
+
+        std::fs::write(dir.0.join("a.png"), b"").unwrap();
+        session.open_path(&dir.0).unwrap();
+        assert!(session.folders.is_empty(), "with images there is nothing to browse");
+    }
+
+    #[test]
+    fn going_up_selects_the_folder_we_came_from() {
+        let dir = TempDir::with_files("came-from", &[]);
+        for sub in ["a", "b", "c"] {
+            std::fs::create_dir(dir.0.join(sub)).unwrap();
+        }
+        let mut session = Session::default();
+        session.open_path(&dir.0.join("b")).unwrap();
+        session.open_path(&dir.0).unwrap();
+
+        assert_eq!(session.folders[session.folder_index].file_name, "b");
+    }
+
+    #[test]
+    fn the_folder_selection_stops_at_the_ends() {
+        let dir = TempDir::with_files("folder-ends", &[]);
+        for sub in ["a", "b"] {
+            std::fs::create_dir(dir.0.join(sub)).unwrap();
+        }
+        let mut session = Session::default();
+        session.open_path(&dir.0).unwrap();
+
+        assert!(session.step_folder(isize::MAX));
+        assert_eq!(session.folder_index, 2, "\"..\", a, b: the last one");
+        assert!(!session.step_folder(1));
+        assert!(session.step_folder(isize::MIN));
+        assert_eq!(session.folder_index, 0);
     }
 
     #[test]

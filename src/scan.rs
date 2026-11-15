@@ -31,13 +31,24 @@ pub fn is_supported(path: &Path) -> bool {
 /// extension. Unreadable entries are silently skipped instead of aborting the
 /// whole scan.
 pub fn scan_dir(dir: &Path) -> Result<Vec<Entry>> {
+    list(dir, |p| p.is_file() && is_supported(p))
+}
+
+/// Lists the subfolders of a directory, skipping hidden ones, in the same
+/// natural order. They feed the folder browser shown when a folder has no
+/// images.
+pub fn scan_subdirs(dir: &Path) -> Result<Vec<Entry>> {
+    list(dir, Path::is_dir)
+}
+
+fn list(dir: &Path, keep: impl Fn(&Path) -> bool) -> Result<Vec<Entry>> {
     let read = std::fs::read_dir(dir)
         .with_context(|| format!("could not read directory {}", dir.display()))?;
 
     let mut entries: Vec<Entry> = read
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.is_file() && is_supported(p) && !is_hidden(p))
+        .filter(|p| !is_hidden(p) && keep(p))
         .map(Entry::new)
         .collect();
 
