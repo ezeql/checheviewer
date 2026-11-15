@@ -71,6 +71,9 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, start: Option<PathBuf>) -> Self {
+        // AppKit swapped our exception handler for its own while launching.
+        crate::diag::install_exception_handler();
+
         // Workers wake the UI when they finish decoding; without this the
         // freshly loaded image wouldn't show up until the next mouse or
         // keyboard event.

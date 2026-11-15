@@ -55,7 +55,15 @@ pub fn install_crash_log() {
         ));
         default_hook(info);
     }));
+    install_exception_handler();
+}
 
+/// Points Foundation's uncaught-exception handler at the error log.
+///
+/// Installing it once in `main` is not enough: AppKit replaces it with its
+/// own while the app launches, so `App::new`, which runs after launch, calls
+/// this again. Without the second call no exception ever reached the log.
+pub fn install_exception_handler() {
     // SAFETY: the handler has the signature Foundation expects,
     // `void (*)(NSException *)`, and lives for the whole program.
     #[cfg(target_os = "macos")]
